@@ -85,6 +85,8 @@ class Climber:
         self.on_ground = False
         self.alive = True
         self.break_cooldown = 0
+        self.on_wall = 0          # -1 = touching left wall, 0 = none, 1 = right wall
+        self.wall_jump_lock = 0   # cooldown ticks to prevent chained wall jumps
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -110,7 +112,6 @@ class Climber:
             return
         new_x = self.x + dx
         half_w = CLIMBER_WIDTH / 2
-        # All rows the body occupies (not the feet row)
         r0 = max(0, int(self.y - CLIMBER_HEIGHT + 0.001))
         r1 = min(BOARD_ROWS - 1, int(self.y - 0.001))
         body_rows = range(r0, r1 + 1)
@@ -119,20 +120,26 @@ class Climber:
             edge_col = int(new_x + half_w)
             if edge_col >= BOARD_COLS:
                 self.x = BOARD_COLS - half_w
+                self.on_wall = 1
                 return
             if self._blocked(board, body_rows, [edge_col]):
-                self.x = edge_col - half_w          # snap left of wall
+                self.x = edge_col - half_w
+                self.on_wall = 1        # hit a right-side wall
             else:
                 self.x = new_x
+                self.on_wall = 0
         else:
             edge_col = int(new_x - half_w)
             if edge_col < 0:
                 self.x = half_w
+                self.on_wall = -1
                 return
             if self._blocked(board, body_rows, [edge_col]):
-                self.x = (edge_col + 1) + half_w   # snap right of wall
+                self.x = (edge_col + 1) + half_w
+                self.on_wall = -1       # hit a left-side wall
             else:
                 self.x = new_x
+                self.on_wall = 0
 
     def _move_y(self, dy, board):
         new_y = self.y + dy
@@ -180,10 +187,12 @@ class Climber:
         if not self.alive:
             return
 
-        # Gravity — simple per-tick accumulation, no CELL_SIZE scaling
+        # Gravity
         self.vy = min(self.vy + GRAVITY, MAX_FALL_SPEED)
         if self.break_cooldown > 0:
             self.break_cooldown -= 1
+        if self.wall_jump_lock > 0:
+            self.wall_jump_lock -= 1
 
         # Horizontal input
         self.vx = 0.0
@@ -192,13 +201,32 @@ class Climber:
         elif keys.get("right"):
             self.vx = WALK_SPEED
 
-        # Jump — only when grounded
+        # Regular jump
         if keys.get("jump") and self.on_ground:
             self.vy = JUMP_FORCE
 
+        prev_on_wall = self.on_wall
         self.on_ground = False
+        self.on_wall = 0          # reset; _move_x sets it if blocked
         self._move_x(self.vx, board)
+
+        # Preserve wall contact for a few ticks so players can time the jump
+        # even if they briefly stop pressing into the wall
+        if self.on_wall == 0 and not self.on_ground:
+            self.on_wall = prev_on_wall   # keep last known wall direction
+
+        # Wall jump: airborne + touching wall + jump pressed + not in cooldown
+        if (keys.get("jump") and not self.on_ground
+                and self.on_wall != 0 and self.wall_jump_lock == 0):
+            self.vy = WALL_JUMP_VY
+            self.vx = -self.on_wall * WALL_JUMP_VX   # kick away from wall
+            self.on_wall = 0
+            self.wall_jump_lock = 18   # ~0.3s before another wall jump
+
         self._move_y(self.vy, board)
+        # Once grounded, clear wall contact so wall jump can reset cleanly
+        if self.on_ground:
+            self.on_wall = 0
 
     # ── crush detection ───────────────────────────────────────────────────────
 

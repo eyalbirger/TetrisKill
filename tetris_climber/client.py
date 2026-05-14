@@ -501,8 +501,8 @@ def main():
                 pygame.quit(); sys.exit()
 
             # ── Builder events ────────────────────────────────────────────────
-            if client.role == "builder" and playing:
-                if event.type == pygame.KEYDOWN:
+            if client.role == "builder":
+                if event.type == pygame.KEYDOWN and playing:
                     if event.key == pygame.K_LEFT:
                         client.send({"type": "action", "action": "left"})
                         b_held["left"] = True;  b_das["left"] = 0
@@ -513,6 +513,7 @@ def main():
                         client.send({"type": "action", "action": "rotate"})
                     elif event.key == pygame.K_DOWN:
                         b_held["down"] = True
+                # KEYUP always processed so held state stays accurate when game ends
                 if event.type == pygame.KEYUP:
                     if event.key == pygame.K_LEFT:  b_held["left"]  = False
                     if event.key == pygame.K_RIGHT: b_held["right"] = False
@@ -587,6 +588,11 @@ def main():
             # If game restarted (server cleared game_over_info), resume
             if go_info is None:
                 showing_gameover = False
+                # Clean slate for next game — clear every held state
+                b_held["left"] = b_held["right"] = b_held["down"] = False
+                b_das["left"]  = b_das["right"]  = 0
+                climber_keys["left"] = climber_keys["right"] = climber_keys["jump"] = False
+                jump_pressed = False
             else:
                 you_won = go_info.get("winner", "") == client.username
                 msg = "YOU WIN!" if you_won else "YOU LOSE"

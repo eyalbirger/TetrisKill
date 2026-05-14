@@ -13,8 +13,10 @@ BREAK_COOLDOWN_TICKS = 30  # ticks before climber can break another block
 # All physics values are in cells/tick (position is in cells, 1 tick = 1/TICK_RATE seconds)
 GRAVITY = 0.007          # cells/tick² — acceleration applied each tick
 JUMP_FORCE = -0.22       # cells/tick — initial upward velocity (~3.5 cell peak height)
-WALK_SPEED = 0.15        # cells/tick — horizontal speed
+WALK_SPEED = 0.22        # cells/tick — horizontal speed
 MAX_FALL_SPEED = 0.8     # cells/tick — terminal velocity
+WALL_JUMP_VY = -0.20     # cells/tick — upward kick on wall jump
+WALL_JUMP_VX = 0.25      # cells/tick — horizontal kick away from wall
 CLIMBER_WIDTH = 0.7      # cells
 CLIMBER_HEIGHT = 1.5     # cells
 
