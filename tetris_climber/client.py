@@ -38,7 +38,7 @@ def _recvall(sock, n):
 
 BOARD_PX_W = BOARD_COLS * CELL_SIZE
 BOARD_PX_H = BOARD_ROWS * CELL_SIZE
-SIDEBAR_W  = 200
+SIDEBAR_W  = 300
 WINDOW_W   = BOARD_PX_W + SIDEBAR_W
 WINDOW_H   = BOARD_PX_H
 
@@ -134,7 +134,7 @@ def draw_sidebar(surf, font, small_font, state, role, username):
     # Controls
     y += 10
     if role == "builder":
-        controls = ["← → Move","↑ Rotate","↓ Soft drop","Space Hard drop"]
+        controls = ["← → Move piece","↑ Rotate","↓ Hold to soft drop"]
     else:
         controls = ["← → / A D Walk","Space / ↑ / W Jump","Jump into block to break"]
         cd = state.get("climber", {}).get("break_cooldown", 0)
@@ -402,9 +402,14 @@ def main():
     climber_keys = {"left": False, "right": False, "jump": False}
     jump_pressed = False
 
+    # Builder soft-drop held state
+    soft_drop_held = False
+    soft_drop_frame = 0
+
     # Main game loop
     last_key_send = 0
     showing_gameover = False
+    frame = 0
 
     while client.connected:
         for event in pygame.event.get():
@@ -420,9 +425,16 @@ def main():
                     elif event.key == pygame.K_UP:
                         client.send({"type": "action", "action": "rotate"})
                     elif event.key == pygame.K_DOWN:
-                        client.send({"type": "action", "action": "soft_drop"})
-                    elif event.key == pygame.K_SPACE:
-                        client.send({"type": "action", "action": "hard_drop"})
+                        soft_drop_held = True
+                if event.type == pygame.KEYUP:
+                    if event.key == pygame.K_DOWN:
+                        soft_drop_held = False
+
+        # Held soft-drop: send every 4 frames while key is down
+        if (client.role == "builder" and soft_drop_held
+                and client.state.get("status") == "playing"
+                and frame % 4 == 0):
+            client.send({"type": "action", "action": "soft_drop"})
 
             if client.role == "climber":
                 if event.type == pygame.KEYDOWN:
@@ -493,6 +505,7 @@ def main():
 
         pygame.display.flip()
         clock.tick(60)
+        frame += 1
 
 
 if __name__ == "__main__":
