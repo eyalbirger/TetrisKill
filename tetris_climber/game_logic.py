@@ -121,11 +121,11 @@ class Climber:
             edge_col = int(new_x + half_w)
             if edge_col >= BOARD_COLS:
                 self.x = BOARD_COLS - half_w
-                self.on_wall = 1
+                # board border — no wall-jump
                 return
             if self._blocked(board, body_rows, [edge_col]):
                 self.x = edge_col - half_w
-                self.on_wall = 1        # hit a right-side wall
+                self.on_wall = 1        # hit a placed block — wall-jump allowed
             else:
                 self.x = new_x
                 self.on_wall = 0
@@ -133,11 +133,11 @@ class Climber:
             edge_col = int(new_x - half_w)
             if edge_col < 0:
                 self.x = half_w
-                self.on_wall = -1
+                # board border — no wall-jump
                 return
             if self._blocked(board, body_rows, [edge_col]):
                 self.x = (edge_col + 1) + half_w
-                self.on_wall = -1       # hit a left-side wall
+                self.on_wall = -1       # hit a placed block — wall-jump allowed
             else:
                 self.x = new_x
                 self.on_wall = 0
@@ -246,7 +246,8 @@ class Climber:
     def to_dict(self):
         return {"x": self.x, "y": self.y, "vx": self.vx, "vy": self.vy,
                 "on_ground": self.on_ground, "alive": self.alive,
-                "break_cooldown": self.break_cooldown}
+                "break_cooldown": self.break_cooldown,
+                "on_wall": self.on_wall}
 
     @classmethod
     def from_dict(cls, d):
@@ -254,6 +255,7 @@ class Climber:
         c.x, c.y, c.vx, c.vy = d["x"], d["y"], d["vx"], d["vy"]
         c.on_ground, c.alive = d["on_ground"], d["alive"]
         c.break_cooldown = d.get("break_cooldown", 0)
+        c.on_wall = d.get("on_wall", 0)
         return c
 
 

@@ -88,19 +88,114 @@ def draw_win_line(surf):
     y = WIN_ROW * CELL_SIZE
     pygame.draw.line(surf, COLORS["win_line"], (0, y), (BOARD_PX_W, y), 2)
 
-def draw_climber(surf, climber):
-    if not climber["alive"]:
+# ── Sprite animation ──────────────────────────────────────────────────────────
+# Source frame size (pixels in the PNG sheets)
+_SRC_W, _SRC_H = 64, 80
+# Display size — scale proportionally so height = 2 cells
+_DSP_H = CELL_SIZE * 2          # 64 px
+_DSP_W = _DSP_H * _SRC_W // _SRC_H  # 51 px  (preserves aspect ratio)
+
+# (n_frames, anim_fps, asset_path)
+_ANIM_DEF = {
+    "idle":     (6,  7, "assets/stickman_idle.png"),
+    "run":      (8, 14, "assets/stickman_run.png"),
+    "jump":     (1,  1, "assets/stickman_jump.png"),
+    "fall":     (1,  1, "assets/stickman_fall.png"),
+    "death":    (8,  8, "assets/stickman_death.png"),
+    "wallhold": (1,  1, "assets/stickman_wallhold.png"),
+}
+
+# Populated by load_sprites(); each entry: (fps, [(normal, flipped), ...])
+_sprites: dict = {}
+_facing_right = True
+_death_start_frame: int | None = None
+
+
+def load_sprites():
+    """Load and pre-scale every animation strip. Call once after pygame.init()."""
+    global _sprites
+    for state, (n_frames, fps, path) in _ANIM_DEF.items():
+        try:
+            sheet = pygame.image.load(path).convert_alpha()
+        except Exception as e:
+            print(f"[sprites] could not load {path}: {e}")
+            _sprites[state] = None
+            continue
+        pairs = []
+        for i in range(n_frames):
+            src  = pygame.Rect(i * _SRC_W, 0, _SRC_W, _SRC_H)
+            cell = sheet.subsurface(src)
+            norm = pygame.transform.smoothscale(cell, (_DSP_W, _DSP_H))
+            flip = pygame.transform.flip(norm, True, False)
+            pairs.append((norm, flip))
+        _sprites[state] = (fps, pairs)
+
+
+def _climber_anim_state(climber) -> str:
+    if not climber.get("alive", True):
+        return "death"
+    on_wall = climber.get("on_wall", 0)
+    on_ground = climber.get("on_ground", False)
+    vy = climber.get("vy", 0)
+    vx = climber.get("vx", 0)
+    if not on_ground:
+        if on_wall != 0:
+            return "wallhold"
+        return "fall" if vy > 0.02 else "jump"
+    return "run" if abs(vx) > 0.01 else "idle"
+
+
+def draw_climber(surf, climber, frame: int):
+    global _facing_right, _death_start_frame
+
+    cx = int(climber["x"] * CELL_SIZE)
+    cy = int(climber["y"] * CELL_SIZE)
+
+    # Track facing direction from horizontal velocity
+    vx = climber.get("vx", 0)
+    on_wall = climber.get("on_wall", 0)
+    if vx > 0.01:
+        _facing_right = True
+    elif vx < -0.01:
+        _facing_right = False
+    elif on_wall == 1:   # pressing against right wall
+        _facing_right = True
+    elif on_wall == -1:  # pressing against left wall
+        _facing_right = False
+
+    state = _climber_anim_state(climber)
+
+    # Track when death animation began
+    if state == "death":
+        if _death_start_frame is None:
+            _death_start_frame = frame
+    else:
+        _death_start_frame = None
+
+    # ── Sprite render ──────────────────────────────────────────────────────────
+    entry = _sprites.get(state)
+    if entry is None:
+        # Fallback rectangle if asset failed to load
+        h = int(CLIMBER_HEIGHT * CELL_SIZE)
+        w = int(CLIMBER_WIDTH  * CELL_SIZE)
+        pygame.draw.rect(surf, COLORS["climber"],
+                         pygame.Rect(cx - w // 2, cy - h, w, h), border_radius=4)
         return
-    cx = climber["x"] * CELL_SIZE
-    cy = climber["y"] * CELL_SIZE
-    h = CLIMBER_HEIGHT * CELL_SIZE
-    w = CLIMBER_WIDTH * CELL_SIZE
-    body = pygame.Rect(int(cx - w/2), int(cy - h), int(w), int(h))
-    pygame.draw.rect(surf, COLORS["climber"], body, border_radius=4)
-    # eyes
-    eye_y = int(cy - h * 0.75)
-    pygame.draw.circle(surf, (0,0,0), (int(cx - w*0.15), eye_y), 3)
-    pygame.draw.circle(surf, (0,0,0), (int(cx + w*0.15), eye_y), 3)
+
+    fps, pairs = entry
+    n = len(pairs)
+
+    if state == "death":
+        elapsed = frame - (_death_start_frame or frame)
+        fi = min(elapsed * fps // 60, n - 1)   # play once, hold last frame
+    else:
+        fi = (frame * fps // 60) % n           # loop
+
+    norm, flip = pairs[fi]
+    img = norm if _facing_right else flip
+
+    # Align bottom-centre of sprite to climber's foot position
+    surf.blit(img, (cx - _DSP_W // 2, cy - _DSP_H))
 
 def draw_sidebar(surf, font, small_font, state, role, username):
     ox = BOARD_PX_W + 10
@@ -407,6 +502,7 @@ def main():
     font = pygame.font.SysFont("monospace", 22, bold=True)
     small_font = pygame.font.SysFont("monospace", 15)
     clock = pygame.time.Clock()
+    load_sprites()
 
     client = GameClient(host)
 
@@ -576,7 +672,7 @@ def main():
             if state.get("piece") and state.get("status") == "playing":
                 draw_piece(screen, state["piece"], state.get("ghost_y"))
             if state.get("climber"):
-                draw_climber(screen, state["climber"])
+                draw_climber(screen, state["climber"], frame)
 
         # Sidebar background
         pygame.draw.rect(screen, (25, 25, 35), pygame.Rect(BOARD_PX_W, 0, SIDEBAR_W, WINDOW_H))
