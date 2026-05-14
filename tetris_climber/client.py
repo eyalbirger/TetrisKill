@@ -136,7 +136,14 @@ def draw_sidebar(surf, font, small_font, state, role, username):
     if role == "builder":
         controls = ["← → Move","↑ Rotate","↓ Soft drop","Space Hard drop"]
     else:
-        controls = ["← → Walk","Space / ↑ Jump"]
+        controls = ["← → / A D Walk","Space / ↑ / W Jump","Jump into block to break"]
+        cd = state.get("climber", {}).get("break_cooldown", 0)
+        if cd > 0:
+            pct = cd / 30
+            bar_w = SIDEBAR_W - 20
+            pygame.draw.rect(surf, (60,60,60), pygame.Rect(ox, y, bar_w, 8))
+            pygame.draw.rect(surf, (255,80,80), pygame.Rect(ox, y, int(bar_w * pct), 8))
+            y += 12
     text("Controls:", small_font, (150,150,150))
     for c in controls:
         text(c, small_font, (120,120,120))
@@ -318,6 +325,7 @@ class GameClient:
                 self.leaderboard = msg["leaderboard"]
         elif t == "start":
             self.state = {**self.state, "status": "playing"}
+            self.game_over_info = None   # clear on restart
 
 
 def main():
@@ -468,15 +476,20 @@ def main():
         if state.get("status") == "waiting":
             draw_overlay(screen, font, "Waiting for opponent...")
         elif showing_gameover:
-            winner = go_info.get("winner", "")
-            status = go_info.get("status", "")
-            you_won = winner == client.username
-            msg = "YOU WIN!" if you_won else "YOU LOSE"
-            sub = f"{winner} wins in {go_info.get('duration',0):.2f}s  |  Press Q to quit"
-            draw_overlay(screen, font, msg, sub)
-            keys = pygame.key.get_pressed()
-            if keys[pygame.K_q]:
-                pygame.quit(); sys.exit()
+            # If game restarted (server cleared game_over_info), resume
+            if go_info is None:
+                showing_gameover = False
+            else:
+                you_won = go_info.get("winner", "") == client.username
+                msg = "YOU WIN!" if you_won else "YOU LOSE"
+                sub = (f"{go_info.get('winner','')} wins in {go_info.get('duration',0):.2f}s"
+                       f"  |  R = play again   Q = quit")
+                draw_overlay(screen, font, msg, sub)
+                pressed = pygame.key.get_pressed()
+                if pressed[pygame.K_r]:
+                    client.send({"type": "restart"})
+                if pressed[pygame.K_q]:
+                    pygame.quit(); sys.exit()
 
         pygame.display.flip()
         clock.tick(60)

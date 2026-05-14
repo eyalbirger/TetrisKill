@@ -84,6 +84,7 @@ class Climber:
         self.vy = 0.0
         self.on_ground = False
         self.alive = True
+        self.break_cooldown = 0
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -157,12 +158,17 @@ class Climber:
                 self.y = new_y
 
         else:  # moving up
-            # Sweep rows the head newly enters, from just above current head downward.
             curr_head_row = int(self.y - CLIMBER_HEIGHT)
             new_head_row  = int(new_y - CLIMBER_HEIGHT)
             for row in range(curr_head_row - 1, new_head_row - 1, -1):
                 if 0 <= row < BOARD_ROWS and self._blocked(board, [row], cols):
-                    # Head hit the bottom of this row; push feet down accordingly
+                    if self.break_cooldown == 0:
+                        # Mario-style: break every placed block the head bumps from below
+                        for col in cols:
+                            if board.grid[row][col]:
+                                board.grid[row][col] = ""
+                        self.break_cooldown = BREAK_COOLDOWN_TICKS
+                    # Head bounces back regardless of whether a block was broken
                     self.y = float(row + 1) + CLIMBER_HEIGHT
                     self.vy = 0.0
                     return
@@ -176,6 +182,8 @@ class Climber:
 
         # Gravity — simple per-tick accumulation, no CELL_SIZE scaling
         self.vy = min(self.vy + GRAVITY, MAX_FALL_SPEED)
+        if self.break_cooldown > 0:
+            self.break_cooldown -= 1
 
         # Horizontal input
         self.vx = 0.0
@@ -202,13 +210,15 @@ class Climber:
 
     def to_dict(self):
         return {"x": self.x, "y": self.y, "vx": self.vx, "vy": self.vy,
-                "on_ground": self.on_ground, "alive": self.alive}
+                "on_ground": self.on_ground, "alive": self.alive,
+                "break_cooldown": self.break_cooldown}
 
     @classmethod
     def from_dict(cls, d):
         c = cls()
         c.x, c.y, c.vx, c.vy = d["x"], d["y"], d["vx"], d["vy"]
         c.on_ground, c.alive = d["on_ground"], d["alive"]
+        c.break_cooldown = d.get("break_cooldown", 0)
         return c
 
 
@@ -231,7 +241,7 @@ class GameState:
         self.climber_keys: dict = {}
 
     def fall_interval(self):
-        return max(1, FALL_TICKS_BASE - (self.level - 1) * 5)
+        return max(MIN_FALL_INTERVAL, FALL_TICKS_BASE - (self.level - 1) * 5)
 
     def _try_move(self, dx, dy):
         cells = self.current_piece.cells(dx, dy)

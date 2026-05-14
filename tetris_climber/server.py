@@ -143,10 +143,23 @@ class GameServer:
 
     def _handle_input(self, role: str, msg: dict):
         with self.lock:
-            if msg.get("type") == "action" and role == "builder":
+            t = msg.get("type")
+            if t == "action" and role == "builder":
                 self.state.apply_builder_action(msg.get("action", ""))
-            elif msg.get("type") == "keys" and role == "climber":
+            elif t == "keys" and role == "climber":
                 self.state.climber_keys = msg.get("keys", {})
+            elif t == "restart":
+                self._handle_restart()
+
+    def _handle_restart(self):
+        if self.state.status not in ("builder_wins", "climber_wins"):
+            return
+        self.state = GameState()
+        self.state.status = "playing"
+        self.state.start_time = time.time()
+        self._broadcast({"type": "start"})
+        self._broadcast({"type": "state", "data": self.state.to_dict()})
+        threading.Thread(target=self._game_loop, daemon=True).start()
 
     def _game_loop(self):
         interval = 1.0 / TICK_RATE
