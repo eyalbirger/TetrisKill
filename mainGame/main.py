@@ -136,15 +136,22 @@ BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 GRAY = (128, 128, 128)
 
-size = (400, 500)
+size = (500, 625)
 screen = pygame.display.set_mode(size)
 
-pygame.display.set_caption("Tetris")
+pygame.display.set_caption("TetrisKill")
+
+#background
+BG = pygame.transform.scale(pygame.image.load("GUI\screens\mainScreen\BG.png"),
+                                                size)
+def drawBG():
+    screen.blit(BG, (0, 0))
+    pygame.display.update()
 
 # Loop until the user clicks the close button.
 done = False
 clock = pygame.time.Clock()
-fps = 25
+fps = 25 * 2
 game = Tetris(20, 10)
 counter = 0
 
@@ -182,7 +189,7 @@ while not done:
             if event.key == pygame.K_DOWN:
                 pressing_down = False
 
-    screen.fill(WHITE)
+    drawBG()
 
     for i in range(game.height):
         for j in range(game.width):
