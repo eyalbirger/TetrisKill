@@ -272,6 +272,74 @@ def auth_screen(screen, font, small_font):
                 elif event.unicode and len(fields[focused]) < 20:
                     fields[focused] += event.unicode
 
+# ── Role selection screen ─────────────────────────────────────────────────────
+
+def role_selection_screen(screen, font, small_font, available: list[str]) -> str:
+    clock = pygame.time.Clock()
+    ROLES = {
+        "builder": {
+            "color": (100, 180, 255),
+            "desc1": "Place Tetris pieces to build the board.",
+            "desc2": "Crush the Climber to win!",
+            "key": "1",
+        },
+        "climber": {
+            "color": COLORS["climber"],
+            "desc1": "Jump and climb to the top of the board.",
+            "desc2": "Reach the yellow line to win!",
+            "key": "2",
+        },
+    }
+    while True:
+        screen.fill((15, 15, 25))
+        title = font.render("CHOOSE YOUR ROLE", True, (255, 220, 0))
+        screen.blit(title, (WINDOW_W // 2 - title.get_width() // 2, 60))
+
+        mx, my = pygame.mouse.get_pos()
+        hovered = None
+
+        for i, role in enumerate(("builder", "climber")):
+            info = ROLES[role]
+            taken = role not in available
+            rx = WINDOW_W // 2 - 180
+            ry = 140 + i * 160
+            rect = pygame.Rect(rx, ry, 360, 130)
+
+            if taken:
+                bg, border, tc = (25, 25, 30), (50, 50, 60), (70, 70, 70)
+            elif rect.collidepoint(mx, my):
+                bg, border, tc = (50, 55, 80), info["color"], info["color"]
+                hovered = role
+            else:
+                bg, border, tc = (30, 30, 45), (80, 80, 100), info["color"]
+
+            pygame.draw.rect(screen, bg, rect, border_radius=10)
+            pygame.draw.rect(screen, border, rect, 2, border_radius=10)
+
+            lbl = font.render(
+                f"[{info['key']}]  {role.upper()}" + ("  (taken)" if taken else ""),
+                True, tc
+            )
+            screen.blit(lbl, (rect.x + 16, rect.y + 14))
+            for j, line in enumerate((info["desc1"], info["desc2"])):
+                t = small_font.render(line, True, (140, 140, 140) if taken else (190, 190, 190))
+                screen.blit(t, (rect.x + 16, rect.y + 52 + j * 22))
+
+        pygame.display.flip()
+        clock.tick(60)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN and hovered:
+                return hovered
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_1 and "builder" in available:
+                    return "builder"
+                if event.key == pygame.K_2 and "climber" in available:
+                    return "climber"
+
+
 # ── Main game client ──────────────────────────────────────────────────────────
 
 class GameClient:
@@ -323,6 +391,8 @@ class GameClient:
             self.game_over_info = msg
             if "leaderboard" in msg:
                 self.leaderboard = msg["leaderboard"]
+        elif t == "role":
+            self.role = msg["role"]
         elif t == "start":
             self.state = {**self.state, "status": "playing"}
             self.game_over_info = None   # clear on restart
@@ -368,7 +438,18 @@ def main():
             client = GameClient(host)
             continue
 
-        # Get role
+        # Role selection
+        avail_msg = recv_msg(client.sock)
+        if not avail_msg or avail_msg.get("type") != "roles_available":
+            continue
+        available = avail_msg["available"]
+        if len(available) == 1:
+            chosen = available[0]   # only one slot left, no choice needed
+        else:
+            chosen = role_selection_screen(screen, font, small_font, available)
+        client.send({"type": "choose_role", "role": chosen})
+
+        # Confirmed role from server
         role_msg = recv_msg(client.sock)
         if not role_msg or role_msg.get("type") != "role":
             continue
@@ -398,13 +479,14 @@ def main():
             if event.type == pygame.QUIT:
                 pygame.quit(); sys.exit()
 
-    # Key state for climber (held keys)
+    # Climber held keys
     climber_keys = {"left": False, "right": False, "jump": False}
     jump_pressed = False
 
-    # Builder soft-drop held state
-    soft_drop_held = False
-    soft_drop_frame = 0
+    # Builder held keys + DAS (Delayed Auto Shift)
+    b_held = {"left": False, "right": False, "down": False}
+    b_das  = {"left": 0,     "right": 0}
+    DAS, ARR = 10, 2   # frames: initial delay, then repeat every ARR frames
 
     # Main game loop
     last_key_send = 0
@@ -412,30 +494,31 @@ def main():
     frame = 0
 
     while client.connected:
+        playing = client.state.get("status") == "playing"
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit(); sys.exit()
 
-            if client.role == "builder" and client.state.get("status") == "playing":
+            # ── Builder events ────────────────────────────────────────────────
+            if client.role == "builder" and playing:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_LEFT:
                         client.send({"type": "action", "action": "left"})
+                        b_held["left"] = True;  b_das["left"] = 0
                     elif event.key == pygame.K_RIGHT:
                         client.send({"type": "action", "action": "right"})
+                        b_held["right"] = True; b_das["right"] = 0
                     elif event.key == pygame.K_UP:
                         client.send({"type": "action", "action": "rotate"})
                     elif event.key == pygame.K_DOWN:
-                        soft_drop_held = True
+                        b_held["down"] = True
                 if event.type == pygame.KEYUP:
-                    if event.key == pygame.K_DOWN:
-                        soft_drop_held = False
+                    if event.key == pygame.K_LEFT:  b_held["left"]  = False
+                    if event.key == pygame.K_RIGHT: b_held["right"] = False
+                    if event.key == pygame.K_DOWN:  b_held["down"]  = False
 
-        # Held soft-drop: send every 4 frames while key is down
-        if (client.role == "builder" and soft_drop_held
-                and client.state.get("status") == "playing"
-                and frame % 4 == 0):
-            client.send({"type": "action", "action": "soft_drop"})
-
+            # ── Climber events ────────────────────────────────────────────────
             if client.role == "climber":
                 if event.type == pygame.KEYDOWN:
                     if event.key in (pygame.K_LEFT, pygame.K_a):
@@ -453,8 +536,21 @@ def main():
                     elif event.key in (pygame.K_SPACE, pygame.K_UP, pygame.K_w):
                         climber_keys["jump"] = False
 
-        # Send climber keys at rate limit
-        if client.role == "climber" and client.state.get("status") == "playing":
+        # ── Builder auto-repeat (DAS/ARR) ─────────────────────────────────────
+        if client.role == "builder" and playing:
+            for direction in ("left", "right"):
+                if b_held[direction]:
+                    b_das[direction] += 1
+                    d = b_das[direction]
+                    if d > DAS and (d - DAS) % ARR == 0:
+                        client.send({"type": "action", "action": direction})
+                else:
+                    b_das[direction] = 0
+            if b_held["down"] and frame % 4 == 0:
+                client.send({"type": "action", "action": "soft_drop"})
+
+        # ── Climber key broadcast ─────────────────────────────────────────────
+        if client.role == "climber" and playing:
             now = time.time()
             if now - last_key_send > 1.0 / 30:
                 client.send({"type": "keys", "keys": climber_keys})

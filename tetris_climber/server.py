@@ -95,16 +95,30 @@ class GameServer:
                 conn.close()
                 return
 
-            # Assign role
+            # Tell client which roles are still open, let them choose
             with self.lock:
-                if "builder" not in self.clients:
-                    role = "builder"
-                elif "climber" not in self.clients:
-                    role = "climber"
-                else:
+                available = [r for r in ("builder", "climber") if r not in self.clients]
+            if not available:
+                send_msg(conn, {"type": "error", "message": "Game full"})
+                conn.close()
+                return
+            send_msg(conn, {"type": "roles_available", "available": available})
+
+            # Receive client's choice
+            choice_msg = recv_msg(conn)
+            if not choice_msg or choice_msg.get("type") != "choose_role":
+                conn.close()
+                return
+            requested = choice_msg.get("role")
+
+            with self.lock:
+                # Re-check in case other client grabbed it first
+                available_now = [r for r in ("builder", "climber") if r not in self.clients]
+                if not available_now:
                     send_msg(conn, {"type": "error", "message": "Game full"})
                     conn.close()
                     return
+                role = requested if requested in available_now else available_now[0]
                 self.clients[role] = conn
                 self.usernames[role] = username
 
@@ -154,6 +168,21 @@ class GameServer:
     def _handle_restart(self):
         if self.state.status not in ("builder_wins", "climber_wins"):
             return
+        # Flip roles: builder becomes climber and vice versa
+        b_sock = self.clients.get("builder")
+        c_sock = self.clients.get("climber")
+        b_name = self.usernames.get("builder")
+        c_name = self.usernames.get("climber")
+        self.clients   = {}
+        self.usernames = {}
+        if b_sock: self.clients["climber"]   = b_sock; self.usernames["climber"]   = b_name
+        if c_sock: self.clients["builder"]   = c_sock; self.usernames["builder"]   = c_name
+        # Notify each client of their new role
+        for role, sock in list(self.clients.items()):
+            try:
+                send_msg(sock, {"type": "role", "role": role, "username": self.usernames[role]})
+            except Exception:
+                pass
         self.state = GameState()
         self.state.status = "playing"
         self.state.start_time = time.time()
