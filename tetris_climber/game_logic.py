@@ -87,6 +87,7 @@ class Climber:
         self.break_cooldown = 0
         self.on_wall = 0          # -1 = touching left wall, 0 = none, 1 = right wall
         self.wall_jump_lock = 0   # cooldown ticks to prevent chained wall jumps
+        self.wj_vx = 0.0          # horizontal kick from last wall jump (persists briefly)
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -194,12 +195,17 @@ class Climber:
         if self.wall_jump_lock > 0:
             self.wall_jump_lock -= 1
 
-        # Horizontal input
-        self.vx = 0.0
-        if keys.get("left"):
-            self.vx = -WALK_SPEED
-        elif keys.get("right"):
-            self.vx = WALK_SPEED
+        # Horizontal input — suppressed for the first 8 ticks after a wall jump
+        # so the horizontal kick actually carries the climber away from the wall.
+        if self.wall_jump_lock > 10:
+            self.vx = self.wj_vx   # maintain stored kick velocity
+        else:
+            self.wj_vx = 0.0
+            self.vx = 0.0
+            if keys.get("left"):
+                self.vx = -WALK_SPEED
+            elif keys.get("right"):
+                self.vx = WALK_SPEED
 
         # Regular jump
         if keys.get("jump") and self.on_ground:
@@ -219,7 +225,8 @@ class Climber:
         if (keys.get("jump") and not self.on_ground
                 and self.on_wall != 0 and self.wall_jump_lock == 0):
             self.vy = WALL_JUMP_VY
-            self.vx = -self.on_wall * WALL_JUMP_VX   # kick away from wall
+            self.wj_vx = -self.on_wall * WALL_JUMP_VX   # stored kick away from wall
+            self.vx = self.wj_vx
             self.on_wall = 0
             self.wall_jump_lock = 18   # ~0.3s before another wall jump
 
@@ -311,7 +318,7 @@ class GameState:
         self.locking = False
         self.lock_ticks = 0
         if not self.board.is_valid(self.current_piece.cells()):
-            self.status = "builder_wins"
+            self.status = "climber_wins"  # builder filled the board — climber wins
 
     def _ghost_y(self):
         dy = 0

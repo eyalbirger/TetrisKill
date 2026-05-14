@@ -137,26 +137,35 @@ class GameServer:
                     self._broadcast({"type": "state", "data": self.state.to_dict()})
                     threading.Thread(target=self._game_loop, daemon=True).start()
 
-            # Input loop
+            # Input loop — pass conn so role is looked up dynamically after flips
             while True:
                 msg = recv_msg(conn)
                 if not msg:
                     break
-                self._handle_input(role, msg)
+                self._handle_input(conn, msg)
 
         except Exception as e:
             print(f"Client error: {e}")
         finally:
-            print(f"{username} ({role}) disconnected")
+            print(f"{username} disconnected")
             with self.lock:
-                if role and role in self.clients:
-                    del self.clients[role]
-                if role and role in self.usernames:
-                    del self.usernames[role]
+                # Remove by socket identity — role may have flipped since connect
+                for r in list(self.clients.keys()):
+                    if self.clients.get(r) is conn:
+                        del self.clients[r]
+                        break
+                for r in list(self.usernames.keys()):
+                    if self.usernames.get(r) == username:
+                        del self.usernames[r]
+                        break
             conn.close()
 
-    def _handle_input(self, role: str, msg: dict):
+    def _handle_input(self, conn: socket.socket, msg: dict):
         with self.lock:
+            # Look up the current role for this socket — may have changed after a restart
+            role = next((r for r, s in self.clients.items() if s is conn), None)
+            if role is None:
+                return
             t = msg.get("type")
             if t == "action" and role == "builder":
                 self.state.apply_builder_action(msg.get("action", ""))
