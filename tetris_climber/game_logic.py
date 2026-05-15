@@ -78,22 +78,22 @@ class Board:
 
 class _BoardWithPiece:
     """
-    Thin read-only view that makes the active falling piece solid for the
-    climber's collision and crush checks, without touching the real board grid.
+    Thin proxy that makes the active falling piece solid for the climber's
+    collision and crush checks, without touching the real board grid.
+    All attributes other than cell_filled() are forwarded to the real Board.
     """
-    __slots__ = ("_board", "_cells")
 
     def __init__(self, board: "Board", piece_cells):
         self._board = board
-        self._cells = frozenset(piece_cells)
+        self._cells = frozenset(piece_cells)   # frozenset of (col, row) ints
 
     def cell_filled(self, col, row):
         if (col, row) in self._cells:
             return True
         return self._board.cell_filled(col, row)
 
-    # Forward every other attribute (grid, is_valid, …) to the real board
     def __getattr__(self, name):
+        # Forward grid, is_valid, clear_lines, etc. to the real board
         return getattr(self._board, name)
 
 
@@ -135,7 +135,8 @@ class Climber:
         new_x = self.x + dx
         half_w = CLIMBER_WIDTH / 2
         r0 = max(0, int(self.y - CLIMBER_HEIGHT + 0.001))
-        r1 = min(BOARD_ROWS - 1, int(self.y - 0.001))
+        # Include the feet row so that falling-piece cells at ground level block movement
+        r1 = min(BOARD_ROWS - 1, int(self.y))
         body_rows = range(r0, r1 + 1)
 
         if dx > 0:
@@ -210,7 +211,10 @@ class Climber:
         the climber's body.  Board borders produce an out-of-range column index
         and are therefore never detected — only actual blocks count.
         """
-        body_rows = self._body_rows()
+        # Include feet row so blocks at ground level (e.g. falling piece bottom cells) count as walls
+        r0 = max(0, int(self.y - CLIMBER_HEIGHT + 0.001))
+        r1 = min(BOARD_ROWS - 1, int(self.y))
+        body_rows = range(r0, r1 + 1)
         half_w = CLIMBER_WIDTH / 2
         # Rightmost / leftmost columns currently occupied by the climber body
         c_right = min(BOARD_COLS - 1, int(self.x + half_w - 0.001))
