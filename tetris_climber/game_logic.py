@@ -425,15 +425,14 @@ class GameState:
         self.tick += 1
         self.duration = import_time - self.start_time
 
-        # Build a board view where the falling piece is also solid, so the
-        # climber collides with it just like placed blocks.
-        collision_board = _BoardWithPiece(self.board, self.current_piece.cells())
+        # Climber physics uses only the placed-block board.
+        # The falling piece is a pure death zone — NOT a solid platform.
+        # Keeping them separate means the death check can always detect overlap,
+        # whether the climber walked into the piece or the piece fell onto them.
+        self.climber.update(self.board, self.climber_keys)
 
-        # Climber update (collides with placed blocks AND the falling piece)
-        self.climber.update(collision_board, self.climber_keys)
-
-        # Any contact with the falling piece is instantly fatal.
-        # Use the full hitbox (head through feet row) so standing on a piece also counts.
+        # Any overlap between the climber's full hitbox and a falling-piece cell = death.
+        # This fires both on the ground and in the air, and for vertical impacts.
         if self.climber.alive:
             piece_cell_set = frozenset(self.current_piece.cells())
             r0 = max(0, int(self.climber.y - CLIMBER_HEIGHT + 0.001))
@@ -445,7 +444,7 @@ class GameState:
                 self.status = "builder_wins"
                 return
 
-        # Crush check: placed block locked on top of climber
+        # Crush check: piece that just locked onto the board and overlaps the climber
         if self.climber.alive and self.climber.is_crushed(self.board):
             self.climber.alive = False
             self.status = "builder_wins"
