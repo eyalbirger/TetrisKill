@@ -598,6 +598,14 @@ def main():
     clock = pygame.time.Clock()
     load_sprites()
 
+    # Load lose sound
+    _lose_sound = None
+    try:
+        pygame.mixer.init()
+        _lose_sound = pygame.mixer.Sound("/Users/thom/Downloads/FAHHH.mpeg")
+    except Exception as e:
+        print(f"[audio] could not load lose sound: {e}")
+
     client = GameClient(host)
 
     # Auth loop
@@ -765,6 +773,11 @@ def main():
 
         if go_info and not showing_gameover:
             showing_gameover = True
+            if go_info.get("status") == "builder_wins" and _lose_sound:
+                try:
+                    _lose_sound.play()
+                except Exception as e:
+                    print(f"[audio] play error: {e}")
 
         if state.get("board"):
             draw_board(screen, state["board"])
