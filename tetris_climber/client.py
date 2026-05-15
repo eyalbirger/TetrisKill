@@ -268,6 +268,39 @@ def draw_sidebar(surf, font, small_font, state, role, username):
     for c in controls:
         text(c, small_font, UI["text_faint"])
 
+def draw_quit_screen(surf, font, small_font, lb):
+    """Full-screen leaderboard shown when the player tries to quit."""
+    surf.fill(UI["bg"])
+    title_font = pygame.font.SysFont("monospace", 32, bold=True)
+    title = title_font.render("LEADERBOARD", True, UI["accent"])
+    surf.blit(title, (WINDOW_W // 2 - title.get_width() // 2, 24))
+
+    half = WINDOW_W // 2
+    y = 80
+    def col_board(entries, label, color, x_off):
+        nonlocal y
+        ly = y
+        img = font.render(label, True, color)
+        surf.blit(img, (x_off, ly)); ly += img.get_height() + 6
+        header = small_font.render(f"{'#':<3} {'Name':<14} {'Best':>8} {'Wins':>5}", True, UI["text_dim"])
+        surf.blit(header, (x_off, ly)); ly += header.get_height() + 2
+        pygame.draw.line(surf, UI["sep"], (x_off, ly), (x_off + half - 40, ly)); ly += 4
+        for i, e in enumerate(entries, 1):
+            row_s = small_font.render(
+                f"{i:<3} {e['name']:<14} {e['best_time']:>7.2f}s {e['wins']:>4}",
+                True, UI["text"]
+            )
+            surf.blit(row_s, (x_off, ly)); ly += row_s.get_height() + 2
+        return ly
+
+    r1 = col_board(lb.get("builders", []), "BUILDERS", (60, 120, 210), 20)
+    r2 = col_board(lb.get("climbers", []), "CLIMBERS", COLORS["climber"], half + 20)
+
+    pygame.draw.line(surf, UI["sep"], (20, WINDOW_H - 52), (WINDOW_W - 20, WINDOW_H - 52))
+    hint = font.render("Q  confirm quit       ESC  return to game", True, UI["text_dim"])
+    surf.blit(hint, (WINDOW_W // 2 - hint.get_width() // 2, WINDOW_H - 38))
+
+
 def draw_leaderboard(surf, font, small_font, lb):
     surf.fill(UI["bg"])
     title_font = pygame.font.SysFont("monospace", 28, bold=True)
@@ -613,6 +646,7 @@ def main():
     # Main game loop
     last_key_send = 0
     showing_gameover = False
+    quitting = False
     frame = 0
 
     while client.connected:
@@ -620,7 +654,12 @@ def main():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit(); sys.exit()
+                quitting = True
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    quitting = not quitting   # toggle quit screen
+                if quitting and event.key == pygame.K_q:
+                    pygame.quit(); sys.exit()
 
             # ── Builder events ────────────────────────────────────────────────
             if client.role == "builder":
@@ -724,8 +763,12 @@ def main():
                 pressed = pygame.key.get_pressed()
                 if pressed[pygame.K_r]:
                     client.send({"type": "restart"})
-                if pressed[pygame.K_q]:
-                    pygame.quit(); sys.exit()
+
+        # Quit screen — drawn on top of everything else
+        if quitting:
+            with client.recv_lock:
+                lb = dict(client.leaderboard)
+            draw_quit_screen(screen, font, small_font, lb)
 
         pygame.display.flip()
         clock.tick(60)

@@ -2,9 +2,9 @@ import random
 import copy
 from constants import (
     BOARD_COLS, BOARD_ROWS, GRAVITY, MAX_FALL_SPEED, JUMP_FORCE,
-    WALK_SPEED, WALL_JUMP_VY, WALL_JUMP_VX, CLIMBER_WIDTH, CLIMBER_HEIGHT,
+    WALK_SPEED, CLIMBER_WIDTH, CLIMBER_HEIGHT,
     WIN_ROW, FALL_TICKS_BASE, MIN_FALL_INTERVAL, LOCK_DELAY_TICKS,
-    BREAK_COOLDOWN_TICKS, MAX_WALL_JUMPS, WALL_JUMP_RECHARGE_TICKS,
+    BREAK_COOLDOWN_TICKS,
     TETROMINOES, WALL_KICKS,
 )
 
@@ -112,10 +112,8 @@ class Climber:
         self.on_ground = False
         self.alive = True
         self.break_cooldown = 0
-        self.on_wall = 0            # -1 = touching left wall, 0 = none, 1 = right wall
-        self.wall_jump_lock = 0     # cooldown ticks to prevent chained wall jumps
-        self.wj_vx = 0.0            # horizontal kick from last wall jump (persists briefly)
-        self.wall_jump_count = 0    # wall jumps used since last grounded (max MAX_WALL_JUMPS)
+        self.jumps_used = 0    # 0 = none used, 1 = single jump, 2 = double jump exhausted
+        self.prev_jump = False # previous tick's jump key (edge detection)
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -214,30 +212,6 @@ class Climber:
 
     # ── wall contact probe ────────────────────────────────────────────────────
 
-    def _update_wall_contact(self, board):
-        """
-        Set self.on_wall by probing the column immediately outside each side of
-        the climber's body.  Only actual placed blocks count — board borders never do.
-        """
-        half_w = CLIMBER_WIDTH / 2
-        # Disable wall jumping while any part of the body is inside the first or
-        # last visible column (the drawn border cells of the board).
-        if self.x - half_w < 1.0 or self.x + half_w > BOARD_COLS - 1.0:
-            self.on_wall = 0
-            return
-
-        r0 = max(0, int(self.y - CLIMBER_HEIGHT + 0.001))
-        r1 = min(BOARD_ROWS - 1, int(self.y))
-        body_rows = range(r0, r1 + 1)
-        right_col = min(BOARD_COLS - 1, int(self.x + half_w - 0.001)) + 1
-        left_col  = max(0,              int(self.x - half_w + 0.001)) - 1
-        if self._blocked(board, body_rows, [right_col]):
-            self.on_wall = 1
-        elif self._blocked(board, body_rows, [left_col]):
-            self.on_wall = -1
-        else:
-            self.on_wall = 0
-
     # ── main update ───────────────────────────────────────────────────────────
 
     def update(self, board, keys: dict):
@@ -248,49 +222,35 @@ class Climber:
         self.vy = min(self.vy + GRAVITY, MAX_FALL_SPEED)
         if self.break_cooldown > 0:
             self.break_cooldown -= 1
-        if self.wall_jump_lock > 0:
-            self.wall_jump_lock -= 1
 
-        # Horizontal input — suppressed for the first 8 ticks after a wall jump
-        # so the horizontal kick actually carries the climber away from the wall.
-        if self.wall_jump_lock > 10:
-            self.vx = self.wj_vx
-        else:
-            self.wj_vx = 0.0
-            self.vx = 0.0
-            if keys.get("left"):
-                self.vx = -WALK_SPEED
-            elif keys.get("right"):
-                self.vx = WALK_SPEED
+        # Horizontal input
+        self.vx = 0.0
+        if keys.get("left"):
+            self.vx = -WALK_SPEED
+        elif keys.get("right"):
+            self.vx = WALK_SPEED
 
-        # Regular jump
-        was_on_ground = self.on_ground
-        if keys.get("jump") and was_on_ground:
-            self.vy = JUMP_FORCE
+        # Jump — edge-detected so holding the key only fires once per press.
+        # First press: regular jump (must be grounded).
+        # Second press: double jump (must be airborne and not yet used).
+        jump_now = bool(keys.get("jump"))
+        jump_just_pressed = jump_now and not self.prev_jump
+        self.prev_jump = jump_now
+
+        if jump_just_pressed:
+            if self.on_ground:
+                self.vy = JUMP_FORCE
+                self.jumps_used = 1
+            elif self.jumps_used < 2:
+                self.vy = JUMP_FORCE
+                self.jumps_used = 2
 
         self.on_ground = False
         self._move_x(self.vx, board)
-
-        # Detect adjacent blocks for wall-jump eligibility
-        self._update_wall_contact(board)
-
-        # Wall jump: real block wall (not a border), already airborne this tick
-        # (was_on_ground guards against consuming a count on the same tick as a
-        # ground jump), not in post-jump lock, under the consecutive limit.
-        if (keys.get("jump") and not was_on_ground
-                and self.on_wall != 0 and self.wall_jump_lock == 0
-                and self.wall_jump_count < MAX_WALL_JUMPS):
-            self.vy = WALL_JUMP_VY
-            self.wj_vx = -self.on_wall * WALL_JUMP_VX
-            self.vx = self.wj_vx
-            self.on_wall = 0
-            self.wall_jump_lock = 18
-            self.wall_jump_count += 1
-
         self._move_y(self.vy, board)
+
         if self.on_ground:
-            self.on_wall = 0
-            self.wall_jump_count = 0   # reset only on landing
+            self.jumps_used = 0   # landing resets both jumps
 
     # ── crush detection ───────────────────────────────────────────────────────
 
@@ -304,8 +264,7 @@ class Climber:
         return {"x": self.x, "y": self.y, "vx": self.vx, "vy": self.vy,
                 "on_ground": self.on_ground, "alive": self.alive,
                 "break_cooldown": self.break_cooldown,
-                "on_wall": self.on_wall,
-                "wall_jump_count": self.wall_jump_count}
+                "jumps_used": self.jumps_used}
 
     @classmethod
     def from_dict(cls, d):
@@ -313,8 +272,7 @@ class Climber:
         c.x, c.y, c.vx, c.vy = d["x"], d["y"], d["vx"], d["vy"]
         c.on_ground, c.alive = d["on_ground"], d["alive"]
         c.break_cooldown = d.get("break_cooldown", 0)
-        c.on_wall = d.get("on_wall", 0)
-        c.wall_jump_count = d.get("wall_jump_count", 0)
+        c.jumps_used = d.get("jumps_used", 0)
         return c
 
 
