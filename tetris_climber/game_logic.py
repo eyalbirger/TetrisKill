@@ -223,7 +223,7 @@ class Climber:
         half_w = CLIMBER_WIDTH / 2
         # ── Layer 1: abort immediately if the climber is flush with a board edge ──
         # Using a small epsilon absorbs floating-point imprecision in the snap values.
-        if self.x - half_w <= 0.02 or self.x + half_w >= BOARD_COLS - 0.02:
+        if self.x - half_w <= 0.1 or self.x + half_w >= BOARD_COLS - 0.1:
             self.on_wall = 0
             return
 
@@ -284,13 +284,13 @@ class Climber:
 
         # ── Layer 2: belt-and-suspenders zero after _update_wall_contact ──
         half_w = CLIMBER_WIDTH / 2
-        if self.x - half_w <= 0.02 or self.x + half_w >= BOARD_COLS - 0.02:
+        if self.x - half_w <= 0.1 or self.x + half_w >= BOARD_COLS - 0.1:
             self.on_wall = 0
 
         # Wall jump: airborne + block wall contact + jump pressed + not in cooldown
         # + consecutive wall-jump limit not exhausted
         # ── Layer 3: hard position guard directly on the action ──
-        _near_border = (self.x - half_w <= 0.02 or self.x + half_w >= BOARD_COLS - 0.02)
+        _near_border = (self.x - half_w <= 0.1 or self.x + half_w >= BOARD_COLS - 0.1)
         if (keys.get("jump") and not self.on_ground
                 and self.on_wall != 0 and self.wall_jump_lock == 0
                 and self.wall_jump_count < MAX_WALL_JUMPS
