@@ -115,8 +115,7 @@ class Climber:
         self.on_wall = 0            # -1 = touching left wall, 0 = none, 1 = right wall
         self.wall_jump_lock = 0     # cooldown ticks to prevent chained wall jumps
         self.wj_vx = 0.0            # horizontal kick from last wall jump (persists briefly)
-        self.wall_jump_count = 0    # consecutive wall jumps since last grounded
-        self.wall_jump_recharge = 0 # countdown until wall_jump_count resets
+        self.wall_jump_count = 0    # wall jumps used since last grounded (max MAX_WALL_JUMPS)
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -251,10 +250,6 @@ class Climber:
             self.break_cooldown -= 1
         if self.wall_jump_lock > 0:
             self.wall_jump_lock -= 1
-        if self.wall_jump_recharge > 0:
-            self.wall_jump_recharge -= 1
-            if self.wall_jump_recharge == 0:
-                self.wall_jump_count = 0
 
         # Horizontal input — suppressed for the first 8 ticks after a wall jump
         # so the horizontal kick actually carries the climber away from the wall.
@@ -269,7 +264,8 @@ class Climber:
                 self.vx = WALK_SPEED
 
         # Regular jump
-        if keys.get("jump") and self.on_ground:
+        was_on_ground = self.on_ground
+        if keys.get("jump") and was_on_ground:
             self.vy = JUMP_FORCE
 
         self.on_ground = False
@@ -278,9 +274,10 @@ class Climber:
         # Detect adjacent blocks for wall-jump eligibility
         self._update_wall_contact(board)
 
-        # Wall jump: needs a real block wall (not a border), must be airborne,
-        # jump just pressed, not in post-jump lock, and under the consecutive limit.
-        if (keys.get("jump") and not self.on_ground
+        # Wall jump: real block wall (not a border), already airborne this tick
+        # (was_on_ground guards against consuming a count on the same tick as a
+        # ground jump), not in post-jump lock, under the consecutive limit.
+        if (keys.get("jump") and not was_on_ground
                 and self.on_wall != 0 and self.wall_jump_lock == 0
                 and self.wall_jump_count < MAX_WALL_JUMPS):
             self.vy = WALL_JUMP_VY
@@ -289,14 +286,11 @@ class Climber:
             self.on_wall = 0
             self.wall_jump_lock = 18
             self.wall_jump_count += 1
-            if self.wall_jump_count >= MAX_WALL_JUMPS:
-                self.wall_jump_recharge = WALL_JUMP_RECHARGE_TICKS
 
         self._move_y(self.vy, board)
         if self.on_ground:
             self.on_wall = 0
-            self.wall_jump_count = 0
-            self.wall_jump_recharge = 0
+            self.wall_jump_count = 0   # reset only on landing
 
     # ── crush detection ───────────────────────────────────────────────────────
 
@@ -311,8 +305,7 @@ class Climber:
                 "on_ground": self.on_ground, "alive": self.alive,
                 "break_cooldown": self.break_cooldown,
                 "on_wall": self.on_wall,
-                "wall_jump_count": self.wall_jump_count,
-                "wall_jump_recharge": self.wall_jump_recharge}
+                "wall_jump_count": self.wall_jump_count}
 
     @classmethod
     def from_dict(cls, d):
@@ -322,7 +315,6 @@ class Climber:
         c.break_cooldown = d.get("break_cooldown", 0)
         c.on_wall = d.get("on_wall", 0)
         c.wall_jump_count = d.get("wall_jump_count", 0)
-        c.wall_jump_recharge = d.get("wall_jump_recharge", 0)
         return c
 
 

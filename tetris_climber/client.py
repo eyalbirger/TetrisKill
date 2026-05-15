@@ -63,7 +63,7 @@ UI = {
     "border_frame": ( 60,  65,  90),   # visible wall around the playable area
 }
 
-BORDER_FRAME_T = 4   # pixel thickness of the border frame
+BORDER_FRAME_T = 10  # pixel thickness of the border frame
 
 def board_origin():
     return (0, 0)
