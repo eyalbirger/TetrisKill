@@ -111,12 +111,12 @@ def draw_win_line(surf):
 # ── Sprite animation ──────────────────────────────────────────────────────────
 # Source frame size (pixels in the PNG sheets)
 _SRC_W, _SRC_H = 64, 80
-# Display size — scale proportionally so height = 3 cells
-_DSP_H = CELL_SIZE * 3                      # 96 px
-_DSP_W = _DSP_H * _SRC_W // _SRC_H         # 76 px  (preserves aspect ratio)
-# Each source frame has 16 px of transparent padding at the bottom (out of 80).
-# Scale that to display pixels so the visual feet land exactly on the physics foot y.
-_FOOT_PAD = 16 * _DSP_H // _SRC_H          # 19 px at current display size
+_SRC_BODY_H = _SRC_H - 16   # 64 px — visible content (16 px transparent bottom margin)
+# Scale so the visible sprite body height == physics hitbox height (CLIMBER_HEIGHT cells).
+# This prevents the character from visually phasing into blocks.
+_DSP_H    = int(CLIMBER_HEIGHT * CELL_SIZE * _SRC_H / _SRC_BODY_H)  # 60 px
+_DSP_W    = _DSP_H * _SRC_W // _SRC_H                               # 48 px
+_FOOT_PAD = _DSP_H - int(CLIMBER_HEIGHT * CELL_SIZE)                 # 12 px
 
 # (n_frames, anim_fps, asset_path)
 _ANIM_DEF = {
