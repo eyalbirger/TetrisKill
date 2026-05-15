@@ -113,7 +113,7 @@ class Climber:
         self.alive = True
         self.break_cooldown = 0
         self.on_wall = 0            # -1 = touching left wall, 0 = none, 1 = right wall
-        self.wall_jump_lock = 0     # cooldown ticks to prevent chained wall jumps
+        self.wall_jump_lock = 22     # cooldown ticks to prevent chained wall jumps
         self.wj_vx = 0.0            # horizontal kick from last wall jump (persists briefly)
         self.wall_jump_count = 0    # consecutive wall jumps since last grounded
         self.wall_jump_recharge = 0 # countdown until wall_jump_count resets
