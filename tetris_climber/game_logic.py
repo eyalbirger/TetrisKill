@@ -220,8 +220,9 @@ class Climber:
         the climber's body.  Only actual placed blocks count — board borders never do.
         """
         half_w = CLIMBER_WIDTH / 2
-        # Disable wall jumping when either edge of the climber is flush with a board border.
-        if self.x - half_w <= 0 or self.x + half_w >= BOARD_COLS:
+        # Disable wall jumping while any part of the body is inside the first or
+        # last visible column (the drawn border cells of the board).
+        if self.x - half_w < 1.0 or self.x + half_w > BOARD_COLS - 1.0:
             self.on_wall = 0
             return
 
