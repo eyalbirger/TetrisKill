@@ -218,14 +218,19 @@ class Climber:
     def _update_wall_contact(self, board):
         """
         Set self.on_wall by probing the column immediately outside each side of
-        the climber's body.  Board borders produce an out-of-range column index
-        and are therefore never detected — only actual blocks count.
+        the climber's body.  Only actual placed blocks count — board borders never do.
         """
-        # Include feet row so blocks at ground level (e.g. falling piece bottom cells) count as walls
+        half_w = CLIMBER_WIDTH / 2
+        # ── Layer 1: abort immediately if the climber is flush with a board edge ──
+        # Using a small epsilon absorbs floating-point imprecision in the snap values.
+        if self.x - half_w <= 0.05 or self.x + half_w >= BOARD_COLS - 0.05:
+            self.on_wall = 0
+            return
+
+        # Include feet row so blocks at ground level count as walls
         r0 = max(0, int(self.y - CLIMBER_HEIGHT + 0.001))
         r1 = min(BOARD_ROWS - 1, int(self.y))
         body_rows = range(r0, r1 + 1)
-        half_w = CLIMBER_WIDTH / 2
         # Rightmost / leftmost columns currently occupied by the climber body
         c_right = min(BOARD_COLS - 1, int(self.x + half_w - 0.001))
         c_left  = max(0,              int(self.x - half_w + 0.001))
@@ -277,16 +282,19 @@ class Climber:
         # Detect adjacent blocks for wall-jump eligibility
         self._update_wall_contact(board)
 
-        # Invisible border: touching the board edge cannot trigger a wall jump
+        # ── Layer 2: belt-and-suspenders zero after _update_wall_contact ──
         half_w = CLIMBER_WIDTH / 2
-        if self.x - half_w <= 0 or self.x + half_w >= BOARD_COLS:
+        if self.x - half_w <= 0.05 or self.x + half_w >= BOARD_COLS - 0.05:
             self.on_wall = 0
 
         # Wall jump: airborne + block wall contact + jump pressed + not in cooldown
         # + consecutive wall-jump limit not exhausted
+        # ── Layer 3: hard position guard directly on the action ──
+        _near_border = (self.x - half_w <= 0.05 or self.x + half_w >= BOARD_COLS - 0.05)
         if (keys.get("jump") and not self.on_ground
                 and self.on_wall != 0 and self.wall_jump_lock == 0
-                and self.wall_jump_count < MAX_WALL_JUMPS):
+                and self.wall_jump_count < MAX_WALL_JUMPS
+                and not _near_border):
             self.vy = WALL_JUMP_VY
             self.wj_vx = -self.on_wall * WALL_JUMP_VX
             self.vx = self.wj_vx
