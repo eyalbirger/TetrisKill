@@ -184,7 +184,9 @@ class Climber:
         else:  # moving up
             curr_head_row = int(self.y - CLIMBER_HEIGHT)
             new_head_row  = int(new_y - CLIMBER_HEIGHT)
-            for row in range(curr_head_row - 1, new_head_row - 1, -1):
+            # Start from curr_head_row (inclusive) so a piece that enters the
+            # head's current row this same tick is still detected.
+            for row in range(curr_head_row, new_head_row - 1, -1):
                 if 0 <= row < BOARD_ROWS and self._blocked(board, [row], cols):
                     if self.break_cooldown == 0:
                         # Mario-style: break every PLACED block the head bumps from below.
@@ -260,8 +262,13 @@ class Climber:
         self.on_ground = False
         self._move_x(self.vx, board)
 
-        # Detect adjacent blocks (not borders) for wall-jump eligibility
+        # Detect adjacent blocks for wall-jump eligibility
         self._update_wall_contact(board)
+
+        # Invisible border: touching the board edge cannot trigger a wall jump
+        half_w = CLIMBER_WIDTH / 2
+        if self.x - half_w <= 0 or self.x + half_w >= BOARD_COLS:
+            self.on_wall = 0
 
         # Wall jump: airborne + block wall contact + jump pressed + not in cooldown
         if (keys.get("jump") and not self.on_ground
