@@ -220,25 +220,21 @@ class Climber:
         Set self.on_wall by probing the column immediately outside each side of
         the climber's body.  Only actual placed blocks count — board borders never do.
         """
-        half_w = CLIMBER_WIDTH / 2
-        # ── Layer 1: abort immediately if the climber is flush with a board edge ──
-        # Using a small epsilon absorbs floating-point imprecision in the snap values.
-        if self.x - half_w <= 10 or self.x + half_w >= BOARD_COLS - 10:
+        cols = self._cols()   # integer column range the body currently occupies
+        # If the body occupies the first or last column the climber is touching a
+        # board border — wall jumping is not allowed.
+        if cols[0] == 0 or cols[-1] == BOARD_COLS - 1:
             self.on_wall = 0
             return
 
-        # Include feet row so blocks at ground level count as walls
         r0 = max(0, int(self.y - CLIMBER_HEIGHT + 0.001))
         r1 = min(BOARD_ROWS - 1, int(self.y))
         body_rows = range(r0, r1 + 1)
-        # Rightmost / leftmost columns currently occupied by the climber body
-        c_right = min(BOARD_COLS - 1, int(self.x + half_w - 0.001))
-        c_left  = max(0,              int(self.x - half_w + 0.001))
-        right_col = c_right + 1   # column just beyond the right edge
-        left_col  = c_left  - 1   # column just beyond the left  edge
-        if right_col < BOARD_COLS and self._blocked(board, body_rows, [right_col]):
+        right_col = cols[-1] + 1   # column just beyond the right edge
+        left_col  = cols[0]  - 1   # column just beyond the left  edge
+        if self._blocked(board, body_rows, [right_col]):
             self.on_wall = 1
-        elif left_col >= 0 and self._blocked(board, body_rows, [left_col]):
+        elif self._blocked(board, body_rows, [left_col]):
             self.on_wall = -1
         else:
             self.on_wall = 0
@@ -282,19 +278,11 @@ class Climber:
         # Detect adjacent blocks for wall-jump eligibility
         self._update_wall_contact(board)
 
-        # ── Layer 2: belt-and-suspenders zero after _update_wall_contact ──
-        half_w = CLIMBER_WIDTH / 2
-        if self.x - half_w <= 10 or self.x + half_w >= BOARD_COLS - 10:
-            self.on_wall = 0
-
-        # Wall jump: airborne + block wall contact + jump pressed + not in cooldown
-        # + consecutive wall-jump limit not exhausted
-        # ── Layer 3: hard position guard directly on the action ──
-        _near_border = (self.x - half_w <= 10 or self.x + half_w >= BOARD_COLS - 10)
+        # Wall jump: needs a real block wall (not a border), must be airborne,
+        # jump just pressed, not in post-jump lock, and under the consecutive limit.
         if (keys.get("jump") and not self.on_ground
                 and self.on_wall != 0 and self.wall_jump_lock == 0
-                and self.wall_jump_count < MAX_WALL_JUMPS
-                and not _near_border):
+                and self.wall_jump_count < MAX_WALL_JUMPS):
             self.vy = WALL_JUMP_VY
             self.wj_vx = -self.on_wall * WALL_JUMP_VX
             self.vx = self.wj_vx
