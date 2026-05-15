@@ -606,6 +606,13 @@ def main():
     except Exception as e:
         print(f"[audio] could not load lose sound: {e}")
 
+    _win_sound = None
+    try:
+        pygame.mixer.init()
+        _win_sound = pygame.mixer.Sound("assets/arie.ogg")
+    except Exception as e:
+        print(f"[audio] could not load win sound: {e}")
+
     client = GameClient(host)
 
     # Auth loop
@@ -776,6 +783,14 @@ def main():
             if go_info.get("status") == "builder_wins" and _lose_sound:
                 try:
                     _lose_sound.play()
+                except Exception as e:
+                    print(f"[audio] play error: {e}")
+        
+        if go_info and not showing_gameover:
+            showing_gameover = True
+            if go_info.get("status") == "climber_wins" and _win_sound:
+                try:
+                    _win_sound.play()
                 except Exception as e:
                     print(f"[audio] play error: {e}")
 
