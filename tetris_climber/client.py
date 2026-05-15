@@ -157,13 +157,10 @@ def load_sprites():
 def _climber_anim_state(climber) -> str:
     if not climber.get("alive", True):
         return "death"
-    on_wall = climber.get("on_wall", 0)
     on_ground = climber.get("on_ground", False)
     vy = climber.get("vy", 0)
     vx = climber.get("vx", 0)
     if not on_ground:
-        if on_wall != 0:
-            return "wallhold"
         return "fall" if vy > 0.02 else "jump"
     return "run" if abs(vx) > 0.01 else "idle"
 
@@ -174,16 +171,10 @@ def draw_climber(surf, climber, frame: int):
     cx = int(climber["x"] * CELL_SIZE)
     cy = int(climber["y"] * CELL_SIZE)
 
-    # Track facing direction from horizontal velocity
     vx = climber.get("vx", 0)
-    on_wall = climber.get("on_wall", 0)
     if vx > 0.01:
         _facing_right = True
     elif vx < -0.01:
-        _facing_right = False
-    elif on_wall == 1:   # pressing against right wall
-        _facing_right = True
-    elif on_wall == -1:  # pressing against left wall
         _facing_right = False
 
     state = _climber_anim_state(climber)
@@ -335,6 +326,50 @@ def draw_leaderboard(surf, font, small_font, lb):
     r1 = col_board(lb.get("builders", []), "BUILDERS", (60, 120, 210), 20)
     r2 = col_board(lb.get("climbers", []), "CLIMBERS", COLORS["climber"], half + 20)
     y = max(r1, r2) + 10
+
+def draw_gameover_screen(surf, font, small_font, go_info, lb, username):
+    """Full end-of-game screen: result banner + leaderboard + key hints."""
+    surf.fill(UI["bg"])
+
+    you_won = go_info.get("winner", "") == username
+    banner_color = UI["btn"] if you_won else UI["error"]
+    banner_text  = "YOU WIN!" if you_won else "YOU LOSE"
+
+    big_font = pygame.font.SysFont("monospace", 48, bold=True)
+    banner = big_font.render(banner_text, True, banner_color)
+    surf.blit(banner, (WINDOW_W // 2 - banner.get_width() // 2, 20))
+
+    winner = go_info.get("winner", "")
+    dur    = go_info.get("duration", 0)
+    detail = font.render(f"{winner}  won  in  {dur:.2f}s", True, UI["text_dim"])
+    surf.blit(detail, (WINDOW_W // 2 - detail.get_width() // 2, 82))
+
+    pygame.draw.line(surf, UI["sep"], (20, 114), (WINDOW_W - 20, 114), 1)
+
+    # Leaderboard — two columns
+    half = WINDOW_W // 2
+    y = 124
+    def col_board(entries, label, color, x_off):
+        ly = y
+        lbl = font.render(label, True, color)
+        surf.blit(lbl, (x_off, ly)); ly += lbl.get_height() + 4
+        hdr = small_font.render(f"{'#':<3} {'Name':<14} {'Best':>8} {'Wins':>5}", True, UI["text_dim"])
+        surf.blit(hdr, (x_off, ly)); ly += hdr.get_height() + 2
+        pygame.draw.line(surf, UI["sep"], (x_off, ly), (x_off + half - 30, ly)); ly += 4
+        for i, e in enumerate(entries, 1):
+            row = small_font.render(
+                f"{i:<3} {e['name']:<14} {e['best_time']:>7.2f}s {e['wins']:>4}",
+                True, UI["text"])
+            surf.blit(row, (x_off, ly)); ly += row.get_height() + 2
+        return ly
+
+    col_board(lb.get("builders", []), "BUILDERS", (60, 120, 210), 20)
+    col_board(lb.get("climbers", []), "CLIMBERS", COLORS["climber"], half + 10)
+
+    pygame.draw.line(surf, UI["sep"], (20, WINDOW_H - 46), (WINDOW_W - 20, WINDOW_H - 46), 1)
+    hint = font.render("R  play again          ESC  quit", True, UI["text_dim"])
+    surf.blit(hint, (WINDOW_W // 2 - hint.get_width() // 2, WINDOW_H - 32))
+
 
 def draw_overlay(surf, font, message, sub=""):
     overlay = pygame.Surface((WINDOW_W, WINDOW_H), pygame.SRCALPHA)
@@ -755,11 +790,9 @@ def main():
                 climber_keys["left"] = climber_keys["right"] = climber_keys["jump"] = False
                 jump_pressed = False
             else:
-                you_won = go_info.get("winner", "") == client.username
-                msg = "YOU WIN!" if you_won else "YOU LOSE"
-                sub = (f"{go_info.get('winner','')} wins in {go_info.get('duration',0):.2f}s"
-                       f"  |  R = play again   Q = quit")
-                draw_overlay(screen, font, msg, sub)
+                with client.recv_lock:
+                    lb = dict(client.leaderboard)
+                draw_gameover_screen(screen, font, small_font, go_info, lb, client.username)
                 pressed = pygame.key.get_pressed()
                 if pressed[pygame.K_r]:
                     client.send({"type": "restart"})
