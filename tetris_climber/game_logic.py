@@ -1,6 +1,12 @@
 import random
 import copy
-from constants import *
+from constants import (
+    BOARD_COLS, BOARD_ROWS, GRAVITY, MAX_FALL_SPEED, JUMP_FORCE,
+    WALK_SPEED, WALL_JUMP_VY, WALL_JUMP_VX, CLIMBER_WIDTH, CLIMBER_HEIGHT,
+    WIN_ROW, FALL_TICKS_BASE, MIN_FALL_INTERVAL, LOCK_DELAY_TICKS,
+    BREAK_COOLDOWN_TICKS, MAX_WALL_JUMPS, WALL_JUMP_RECHARGE_TICKS,
+    TETROMINOES, WALL_KICKS,
+)
 
 
 def _rotate_matrix(matrix):
@@ -106,9 +112,11 @@ class Climber:
         self.on_ground = False
         self.alive = True
         self.break_cooldown = 0
-        self.on_wall = 0          # -1 = touching left wall, 0 = none, 1 = right wall
-        self.wall_jump_lock = 0   # cooldown ticks to prevent chained wall jumps
-        self.wj_vx = 0.0          # horizontal kick from last wall jump (persists briefly)
+        self.on_wall = 0            # -1 = touching left wall, 0 = none, 1 = right wall
+        self.wall_jump_lock = 0     # cooldown ticks to prevent chained wall jumps
+        self.wj_vx = 0.0            # horizontal kick from last wall jump (persists briefly)
+        self.wall_jump_count = 0    # consecutive wall jumps since last grounded
+        self.wall_jump_recharge = 0 # countdown until wall_jump_count resets
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -242,6 +250,10 @@ class Climber:
             self.break_cooldown -= 1
         if self.wall_jump_lock > 0:
             self.wall_jump_lock -= 1
+        if self.wall_jump_recharge > 0:
+            self.wall_jump_recharge -= 1
+            if self.wall_jump_recharge == 0:
+                self.wall_jump_count = 0
 
         # Horizontal input — suppressed for the first 8 ticks after a wall jump
         # so the horizontal kick actually carries the climber away from the wall.
@@ -271,17 +283,24 @@ class Climber:
             self.on_wall = 0
 
         # Wall jump: airborne + block wall contact + jump pressed + not in cooldown
+        # + consecutive wall-jump limit not exhausted
         if (keys.get("jump") and not self.on_ground
-                and self.on_wall != 0 and self.wall_jump_lock == 0):
+                and self.on_wall != 0 and self.wall_jump_lock == 0
+                and self.wall_jump_count < MAX_WALL_JUMPS):
             self.vy = WALL_JUMP_VY
             self.wj_vx = -self.on_wall * WALL_JUMP_VX
             self.vx = self.wj_vx
             self.on_wall = 0
             self.wall_jump_lock = 18
+            self.wall_jump_count += 1
+            if self.wall_jump_count >= MAX_WALL_JUMPS:
+                self.wall_jump_recharge = WALL_JUMP_RECHARGE_TICKS
 
         self._move_y(self.vy, board)
         if self.on_ground:
             self.on_wall = 0
+            self.wall_jump_count = 0
+            self.wall_jump_recharge = 0
 
     # ── crush detection ───────────────────────────────────────────────────────
 
@@ -295,7 +314,9 @@ class Climber:
         return {"x": self.x, "y": self.y, "vx": self.vx, "vy": self.vy,
                 "on_ground": self.on_ground, "alive": self.alive,
                 "break_cooldown": self.break_cooldown,
-                "on_wall": self.on_wall}
+                "on_wall": self.on_wall,
+                "wall_jump_count": self.wall_jump_count,
+                "wall_jump_recharge": self.wall_jump_recharge}
 
     @classmethod
     def from_dict(cls, d):
@@ -304,6 +325,8 @@ class Climber:
         c.on_ground, c.alive = d["on_ground"], d["alive"]
         c.break_cooldown = d.get("break_cooldown", 0)
         c.on_wall = d.get("on_wall", 0)
+        c.wall_jump_count = d.get("wall_jump_count", 0)
+        c.wall_jump_recharge = d.get("wall_jump_recharge", 0)
         return c
 
 
@@ -409,8 +432,21 @@ class GameState:
         # Climber update (collides with placed blocks AND the falling piece)
         self.climber.update(collision_board, self.climber_keys)
 
-        # Crush check: falling piece moving into the climber's body kills them
-        if self.climber.alive and self.climber.is_crushed(collision_board):
+        # Any contact with the falling piece is instantly fatal.
+        # Use the full hitbox (head through feet row) so standing on a piece also counts.
+        if self.climber.alive:
+            piece_cell_set = frozenset(self.current_piece.cells())
+            r0 = max(0, int(self.climber.y - CLIMBER_HEIGHT + 0.001))
+            r1 = min(BOARD_ROWS - 1, int(self.climber.y))   # include feet row
+            if any((c, r) in piece_cell_set
+                   for r in range(r0, r1 + 1)
+                   for c in self.climber._cols()):
+                self.climber.alive = False
+                self.status = "builder_wins"
+                return
+
+        # Crush check: placed block locked on top of climber
+        if self.climber.alive and self.climber.is_crushed(self.board):
             self.climber.alive = False
             self.status = "builder_wins"
             return

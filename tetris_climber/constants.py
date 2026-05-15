@@ -9,6 +9,8 @@ FALL_TICKS_BASE = 48    # ticks between piece drops at level 1
 MIN_FALL_INTERVAL = 8   # fastest a piece can fall (ticks) — caps momentum at ~7 cells/sec
 LOCK_DELAY_TICKS = 30
 BREAK_COOLDOWN_TICKS = 30  # ticks before climber can break another block
+MAX_WALL_JUMPS = 2              # consecutive wall jumps allowed before cooldown
+WALL_JUMP_RECHARGE_TICKS = 90  # ticks (~1.5 s) before wall-jump count resets
 
 # All physics values are in cells/tick (position is in cells, 1 tick = 1/TICK_RATE seconds)
 GRAVITY = 0.007          # cells/tick² — acceleration applied each tick
