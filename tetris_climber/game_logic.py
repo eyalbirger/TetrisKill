@@ -76,6 +76,27 @@ class Board:
         return b
 
 
+class _BoardWithPiece:
+    """
+    Thin read-only view that makes the active falling piece solid for the
+    climber's collision and crush checks, without touching the real board grid.
+    """
+    __slots__ = ("_board", "_cells")
+
+    def __init__(self, board: "Board", piece_cells):
+        self._board = board
+        self._cells = frozenset(piece_cells)
+
+    def cell_filled(self, col, row):
+        if (col, row) in self._cells:
+            return True
+        return self._board.cell_filled(col, row)
+
+    # Forward every other attribute (grid, is_valid, …) to the real board
+    def __getattr__(self, name):
+        return getattr(self._board, name)
+
+
 class Climber:
     def __init__(self):
         self.x = BOARD_COLS / 2.0
@@ -121,26 +142,20 @@ class Climber:
             edge_col = int(new_x + half_w)
             if edge_col >= BOARD_COLS:
                 self.x = BOARD_COLS - half_w
-                # board border — no wall-jump
                 return
             if self._blocked(board, body_rows, [edge_col]):
                 self.x = edge_col - half_w
-                self.on_wall = 1        # hit a placed block — wall-jump allowed
             else:
                 self.x = new_x
-                self.on_wall = 0
         else:
             edge_col = int(new_x - half_w)
             if edge_col < 0:
                 self.x = half_w
-                # board border — no wall-jump
                 return
             if self._blocked(board, body_rows, [edge_col]):
                 self.x = (edge_col + 1) + half_w
-                self.on_wall = -1       # hit a placed block — wall-jump allowed
             else:
                 self.x = new_x
-                self.on_wall = 0
 
     def _move_y(self, dy, board):
         new_y = self.y + dy
@@ -171,24 +186,51 @@ class Climber:
             for row in range(curr_head_row - 1, new_head_row - 1, -1):
                 if 0 <= row < BOARD_ROWS and self._blocked(board, [row], cols):
                     if self.break_cooldown == 0:
-                        # Mario-style: break every placed block the head bumps from below
+                        # Mario-style: break every PLACED block the head bumps from below.
+                        # Falling-piece cells pass cell_filled() but aren't in board.grid,
+                        # so they register as a ceiling but don't get cleared.
+                        cleared_any = False
                         for col in cols:
                             if board.grid[row][col]:
                                 board.grid[row][col] = ""
-                        self.break_cooldown = BREAK_COOLDOWN_TICKS
+                                cleared_any = True
+                        if cleared_any:
+                            self.break_cooldown = BREAK_COOLDOWN_TICKS
                     # Head bounces back regardless of whether a block was broken
                     self.y = float(row + 1) + CLIMBER_HEIGHT
                     self.vy = 0.0
                     return
             self.y = new_y
 
+    # ── wall contact probe ────────────────────────────────────────────────────
+
+    def _update_wall_contact(self, board):
+        """
+        Set self.on_wall by probing the column immediately outside each side of
+        the climber's body.  Board borders produce an out-of-range column index
+        and are therefore never detected — only actual blocks count.
+        """
+        body_rows = self._body_rows()
+        half_w = CLIMBER_WIDTH / 2
+        # Rightmost / leftmost columns currently occupied by the climber body
+        c_right = min(BOARD_COLS - 1, int(self.x + half_w - 0.001))
+        c_left  = max(0,              int(self.x - half_w + 0.001))
+        right_col = c_right + 1   # column just beyond the right edge
+        left_col  = c_left  - 1   # column just beyond the left  edge
+        if right_col < BOARD_COLS and self._blocked(board, body_rows, [right_col]):
+            self.on_wall = 1
+        elif left_col >= 0 and self._blocked(board, body_rows, [left_col]):
+            self.on_wall = -1
+        else:
+            self.on_wall = 0
+
     # ── main update ───────────────────────────────────────────────────────────
 
-    def update(self, board: Board, keys: dict):
+    def update(self, board, keys: dict):
         if not self.alive:
             return
 
-        # Gravity
+        # Gravity & timers
         self.vy = min(self.vy + GRAVITY, MAX_FALL_SPEED)
         if self.break_cooldown > 0:
             self.break_cooldown -= 1
@@ -198,7 +240,7 @@ class Climber:
         # Horizontal input — suppressed for the first 8 ticks after a wall jump
         # so the horizontal kick actually carries the climber away from the wall.
         if self.wall_jump_lock > 10:
-            self.vx = self.wj_vx   # maintain stored kick velocity
+            self.vx = self.wj_vx
         else:
             self.wj_vx = 0.0
             self.vx = 0.0
@@ -211,29 +253,22 @@ class Climber:
         if keys.get("jump") and self.on_ground:
             self.vy = JUMP_FORCE
 
-        prev_on_wall = self.on_wall
         self.on_ground = False
-        self.on_wall = 0          # reset; _move_x sets it if blocked
         self._move_x(self.vx, board)
 
-        # Preserve wall contact so players can time the jump even if they briefly
-        # stop pressing into the wall — but NEVER at the board border.
-        half_w = CLIMBER_WIDTH / 2
-        at_border = (self.x <= half_w + 0.01 or self.x >= BOARD_COLS - half_w - 0.01)
-        if self.on_wall == 0 and not self.on_ground and not at_border:
-            self.on_wall = prev_on_wall   # keep last known wall direction
+        # Detect adjacent blocks (not borders) for wall-jump eligibility
+        self._update_wall_contact(board)
 
-        # Wall jump: airborne + touching wall + jump pressed + not in cooldown
+        # Wall jump: airborne + block wall contact + jump pressed + not in cooldown
         if (keys.get("jump") and not self.on_ground
                 and self.on_wall != 0 and self.wall_jump_lock == 0):
             self.vy = WALL_JUMP_VY
-            self.wj_vx = -self.on_wall * WALL_JUMP_VX   # stored kick away from wall
+            self.wj_vx = -self.on_wall * WALL_JUMP_VX
             self.vx = self.wj_vx
             self.on_wall = 0
-            self.wall_jump_lock = 18   # ~0.3s before another wall jump
+            self.wall_jump_lock = 18
 
         self._move_y(self.vy, board)
-        # Once grounded, clear wall contact so wall jump can reset cleanly
         if self.on_ground:
             self.on_wall = 0
 
@@ -356,8 +391,18 @@ class GameState:
         self.tick += 1
         self.duration = import_time - self.start_time
 
-        # Climber update
-        self.climber.update(self.board, self.climber_keys)
+        # Build a board view where the falling piece is also solid, so the
+        # climber collides with it just like placed blocks.
+        collision_board = _BoardWithPiece(self.board, self.current_piece.cells())
+
+        # Climber update (collides with placed blocks AND the falling piece)
+        self.climber.update(collision_board, self.climber_keys)
+
+        # Crush check: falling piece moving into the climber's body kills them
+        if self.climber.alive and self.climber.is_crushed(collision_board):
+            self.climber.alive = False
+            self.status = "builder_wins"
+            return
 
         # Check climber win
         if self.climber.y - CLIMBER_HEIGHT <= WIN_ROW:

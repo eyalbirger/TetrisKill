@@ -112,8 +112,11 @@ def draw_win_line(surf):
 # Source frame size (pixels in the PNG sheets)
 _SRC_W, _SRC_H = 64, 80
 # Display size — scale proportionally so height = 3 cells
-_DSP_H = CELL_SIZE * 3          # 96 px
-_DSP_W = _DSP_H * _SRC_W // _SRC_H  # 76 px  (preserves aspect ratio)
+_DSP_H = CELL_SIZE * 3                      # 96 px
+_DSP_W = _DSP_H * _SRC_W // _SRC_H         # 76 px  (preserves aspect ratio)
+# Each source frame has 16 px of transparent padding at the bottom (out of 80).
+# Scale that to display pixels so the visual feet land exactly on the physics foot y.
+_FOOT_PAD = 16 * _DSP_H // _SRC_H          # 19 px at current display size
 
 # (n_frames, anim_fps, asset_path)
 _ANIM_DEF = {
@@ -214,8 +217,9 @@ def draw_climber(surf, climber, frame: int):
     norm, flip = pairs[fi]
     img = norm if _facing_right else flip
 
-    # Align bottom-centre of sprite to climber's foot position
-    surf.blit(img, (cx - _DSP_W // 2, cy - _DSP_H))
+    # Align the visual feet (bottom of opaque pixels) to the physics foot position.
+    # _FOOT_PAD compensates for the transparent margin at the bottom of each frame.
+    surf.blit(img, (cx - _DSP_W // 2, cy - _DSP_H + _FOOT_PAD))
 
 def draw_sidebar(surf, font, small_font, state, role, username):
     ox = BOARD_PX_W + 10
