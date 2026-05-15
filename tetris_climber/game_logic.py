@@ -219,18 +219,17 @@ class Climber:
         Set self.on_wall by probing the column immediately outside each side of
         the climber's body.  Only actual placed blocks count — board borders never do.
         """
-        cols = self._cols()   # integer column range the body currently occupies
-        # If the body occupies the first or last column the climber is touching a
-        # board border — wall jumping is not allowed.
-        if cols[0] == 0 or cols[-1] == BOARD_COLS - 1:
+        half_w = CLIMBER_WIDTH / 2
+        # Disable wall jumping when either edge of the climber is flush with a board border.
+        if self.x - half_w <= 0 or self.x + half_w >= BOARD_COLS:
             self.on_wall = 0
             return
 
         r0 = max(0, int(self.y - CLIMBER_HEIGHT + 0.001))
         r1 = min(BOARD_ROWS - 1, int(self.y))
         body_rows = range(r0, r1 + 1)
-        right_col = cols[-1] + 1   # column just beyond the right edge
-        left_col  = cols[0]  - 1   # column just beyond the left  edge
+        right_col = min(BOARD_COLS - 1, int(self.x + half_w - 0.001)) + 1
+        left_col  = max(0,              int(self.x - half_w + 0.001)) - 1
         if self._blocked(board, body_rows, [right_col]):
             self.on_wall = 1
         elif self._blocked(board, body_rows, [left_col]):

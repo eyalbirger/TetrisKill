@@ -60,10 +60,7 @@ UI = {
     "btn_hover":    ( 32, 118,  55),
     "cooldown_bg":  (195, 198, 212),
     "cooldown_bar": (190,  50,  50),
-    "border_frame": ( 60,  65,  90),   # visible wall around the playable area
 }
-
-BORDER_FRAME_T = 10  # pixel thickness of the border frame
 
 def board_origin():
     return (0, 0)
@@ -697,9 +694,6 @@ def main():
 
         if state.get("board"):
             draw_board(screen, state["board"])
-            # Visible border frame — touching it disables wall-jumping (enforced server-side)
-            pygame.draw.rect(screen, UI["border_frame"],
-                             pygame.Rect(0, 0, BOARD_PX_W, BOARD_PX_H), BORDER_FRAME_T)
             draw_win_line(screen)
             if state.get("piece") and state.get("status") == "playing":
                 draw_piece(screen, state["piece"], state.get("ghost_y"))
