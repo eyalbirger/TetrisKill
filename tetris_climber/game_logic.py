@@ -413,26 +413,12 @@ class GameState:
         self.tick += 1
         self.duration = import_time - self.start_time
 
-        # Climber physics uses only the placed-block board.
-        # The falling piece is a pure death zone — NOT a solid platform.
-        # Keeping them separate means the death check can always detect overlap,
-        # whether the climber walked into the piece or the piece fell onto them.
-        self.climber.update(self.board, self.climber_keys)
+        # Falling piece is solid: build a board view that includes it so the
+        # climber collides with it exactly like a placed block.
+        collision_board = _BoardWithPiece(self.board, self.current_piece.cells())
+        self.climber.update(collision_board, self.climber_keys)
 
-        # Any overlap between the climber's full hitbox and a falling-piece cell = death.
-        # This fires both on the ground and in the air, and for vertical impacts.
-        if self.climber.alive:
-            piece_cell_set = frozenset(self.current_piece.cells())
-            r0 = max(0, int(self.climber.y - CLIMBER_HEIGHT + 0.001))
-            r1 = min(BOARD_ROWS - 1, int(self.climber.y))   # include feet row
-            if any((c, r) in piece_cell_set
-                   for r in range(r0, r1 + 1)
-                   for c in self.climber._cols()):
-                self.climber.alive = False
-                self.status = "builder_wins"
-                return
-
-        # Crush check: piece that just locked onto the board and overlaps the climber
+        # Crush by a placed block (also catches pieces locked this tick via _lock_piece)
         if self.climber.alive and self.climber.is_crushed(self.board):
             self.climber.alive = False
             self.status = "builder_wins"
@@ -443,7 +429,7 @@ class GameState:
             self.status = "climber_wins"
             return
 
-        # Tetris gravity
+        # Tetris gravity — piece may advance one row
         can_fall = self.board.is_valid(self.current_piece.cells(0, 1))
         if can_fall:
             self.locking = False
@@ -455,6 +441,14 @@ class GameState:
             self.lock_ticks += 1
             if self.lock_ticks >= LOCK_DELAY_TICKS:
                 self._lock_piece()
+
+        # After piece possibly moved, check if it now overlaps the climber's body.
+        # (Feet row excluded: standing on the piece is fine; body overlap = crushed.)
+        if self.climber.alive:
+            after_board = _BoardWithPiece(self.board, self.current_piece.cells())
+            if self.climber.is_crushed(after_board):
+                self.climber.alive = False
+                self.status = "builder_wins"
 
     def to_dict(self):
         return {
