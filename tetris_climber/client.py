@@ -602,7 +602,7 @@ def main():
     _lose_sound = None
     try:
         pygame.mixer.init()
-        _lose_sound = pygame.mixer.Sound("/Users/thom/Downloads/FAHHH.mpeg")
+        _lose_sound = pygame.mixer.Sound("assets/FAHHH.mpeg")
     except Exception as e:
         print(f"[audio] could not load lose sound: {e}")
 
