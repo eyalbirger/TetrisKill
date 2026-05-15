@@ -42,6 +42,26 @@ SIDEBAR_W  = 300
 WINDOW_W   = BOARD_PX_W + SIDEBAR_W
 WINDOW_H   = BOARD_PX_H
 
+# ── Light-mode UI palette ─────────────────────────────────────────────────────
+UI = {
+    "bg":           (238, 240, 248),   # main background
+    "sidebar_bg":   (222, 226, 238),   # sidebar panel
+    "card_bg":      (232, 236, 248),   # role / info card
+    "card_hover":   (210, 216, 240),   # card on hover
+    "card_taken":   (225, 226, 232),   # unavailable card
+    "input_bg":     (250, 251, 255),   # text-field fill
+    "text":         (22,  24,  40),    # primary text
+    "text_dim":     (85,  90, 120),    # secondary text
+    "text_faint":   (145, 150, 172),   # hint / controls text
+    "accent":       (150, 100,   0),   # gold title (visible on light bg)
+    "sep":          (185, 190, 208),   # divider lines
+    "error":        (195,  35,  35),   # error messages
+    "btn":          ( 42, 148,  70),   # submit button
+    "btn_hover":    ( 32, 118,  55),
+    "cooldown_bg":  (195, 198, 212),
+    "cooldown_bar": (190,  50,  50),
+}
+
 def board_origin():
     return (0, 0)
 
@@ -91,9 +111,9 @@ def draw_win_line(surf):
 # ── Sprite animation ──────────────────────────────────────────────────────────
 # Source frame size (pixels in the PNG sheets)
 _SRC_W, _SRC_H = 64, 80
-# Display size — scale proportionally so height = 2 cells
-_DSP_H = CELL_SIZE * 2          # 64 px
-_DSP_W = _DSP_H * _SRC_W // _SRC_H  # 51 px  (preserves aspect ratio)
+# Display size — scale proportionally so height = 3 cells
+_DSP_H = CELL_SIZE * 3          # 96 px
+_DSP_W = _DSP_H * _SRC_W // _SRC_H  # 76 px  (preserves aspect ratio)
 
 # (n_frames, anim_fps, asset_path)
 _ANIM_DEF = {
@@ -200,14 +220,14 @@ def draw_climber(surf, climber, frame: int):
 def draw_sidebar(surf, font, small_font, state, role, username):
     ox = BOARD_PX_W + 10
     y = 10
-    def text(s, f=None, color=(220,220,220)):
+    def text(s, f=None, color=None):
         nonlocal y
-        img = (f or font).render(s, True, color)
+        img = (f or font).render(s, True, color or UI["text"])
         surf.blit(img, (ox, y))
         y += img.get_height() + 4
 
-    text(f"Role: {role.upper()}", color=COLORS["climber"] if role=="climber" else (100,180,255))
-    text(f"User: {username}", small_font)
+    text(f"Role: {role.upper()}", color=COLORS["climber"] if role=="climber" else (60,120,210))
+    text(f"User: {username}", small_font, UI["text_dim"])
     y += 10
     text(f"Score: {state.get('score', 0)}")
     text(f"Lines: {state.get('lines', 0)}")
@@ -216,7 +236,7 @@ def draw_sidebar(surf, font, small_font, state, role, username):
     y += 10
 
     # Next piece preview
-    text("Next:", small_font)
+    text("Next:", small_font, UI["text_dim"])
     next_p = state.get("next_piece")
     if next_p:
         for r, row in enumerate(next_p["matrix"]):
@@ -224,6 +244,7 @@ def draw_sidebar(surf, font, small_font, state, role, username):
                 if v:
                     rect = pygame.Rect(ox + c*18, y + r*18, 16, 16)
                     pygame.draw.rect(surf, COLORS[next_p["kind"]], rect)
+                    pygame.draw.rect(surf, UI["sep"], rect, 1)
         y += len(next_p["matrix"]) * 18 + 8
 
     # Controls
@@ -236,25 +257,25 @@ def draw_sidebar(surf, font, small_font, state, role, username):
         if cd > 0:
             pct = cd / 30
             bar_w = SIDEBAR_W - 20
-            pygame.draw.rect(surf, (60,60,60), pygame.Rect(ox, y, bar_w, 8))
-            pygame.draw.rect(surf, (255,80,80), pygame.Rect(ox, y, int(bar_w * pct), 8))
+            pygame.draw.rect(surf, UI["cooldown_bg"],  pygame.Rect(ox, y, bar_w, 8))
+            pygame.draw.rect(surf, UI["cooldown_bar"], pygame.Rect(ox, y, int(bar_w * pct), 8))
             y += 12
-    text("Controls:", small_font, (150,150,150))
+    text("Controls:", small_font, UI["text_faint"])
     for c in controls:
-        text(c, small_font, (120,120,120))
+        text(c, small_font, UI["text_faint"])
 
 def draw_leaderboard(surf, font, small_font, lb):
-    surf.fill((15, 15, 25))
+    surf.fill(UI["bg"])
     title_font = pygame.font.SysFont("monospace", 28, bold=True)
     y = 30
-    def text(s, f=None, color=(220,220,220), center=False):
+    def text(s, f=None, color=None, center=False):
         nonlocal y
-        img = (f or font).render(s, True, color)
+        img = (f or font).render(s, True, color or UI["text"])
         x = WINDOW_W // 2 - img.get_width() // 2 if center else 30
         surf.blit(img, (x, y))
         y += img.get_height() + 4
 
-    text("LEADERBOARD", title_font, (255,220,0), center=True)
+    text("LEADERBOARD", title_font, UI["accent"], center=True)
     y += 10
 
     half = WINDOW_W // 2
@@ -263,30 +284,30 @@ def draw_leaderboard(surf, font, small_font, lb):
         ly = y
         img = font.render(label, True, color)
         surf.blit(img, (x_off, ly)); ly += img.get_height() + 6
-        header = small_font.render(f"{'#':<3} {'Name':<14} {'Best':>8} {'Wins':>5}", True, (160,160,160))
+        header = small_font.render(f"{'#':<3} {'Name':<14} {'Best':>8} {'Wins':>5}", True, UI["text_dim"])
         surf.blit(header, (x_off, ly)); ly += header.get_height() + 2
-        pygame.draw.line(surf, (80,80,80), (x_off, ly), (x_off + half - 40, ly)); ly += 4
+        pygame.draw.line(surf, UI["sep"], (x_off, ly), (x_off + half - 40, ly)); ly += 4
         for i, e in enumerate(entries, 1):
             row_s = small_font.render(
                 f"{i:<3} {e['name']:<14} {e['best_time']:>7.2f}s {e['wins']:>4}",
-                True, (220,220,220)
+                True, UI["text"]
             )
             surf.blit(row_s, (x_off, ly)); ly += row_s.get_height() + 2
         return ly
 
-    r1 = col_board(lb.get("builders", []), "BUILDERS", (100,180,255), 20)
+    r1 = col_board(lb.get("builders", []), "BUILDERS", (60, 120, 210), 20)
     r2 = col_board(lb.get("climbers", []), "CLIMBERS", COLORS["climber"], half + 20)
     y = max(r1, r2) + 10
 
 def draw_overlay(surf, font, message, sub=""):
     overlay = pygame.Surface((WINDOW_W, WINDOW_H), pygame.SRCALPHA)
-    overlay.fill((0,0,0,160))
-    surf.blit(overlay, (0,0))
-    img = font.render(message, True, (255,220,0))
+    overlay.fill((255, 255, 255, 180))
+    surf.blit(overlay, (0, 0))
+    img = font.render(message, True, UI["accent"])
     surf.blit(img, (WINDOW_W//2 - img.get_width()//2, WINDOW_H//2 - 40))
     if sub:
         sf = pygame.font.SysFont("monospace", 18)
-        img2 = sf.render(sub, True, (200,200,200))
+        img2 = sf.render(sub, True, UI["text_dim"])
         surf.blit(img2, (WINDOW_W//2 - img2.get_width()//2, WINDOW_H//2 + 10))
 
 # ── Auth UI ───────────────────────────────────────────────────────────────────
@@ -299,8 +320,8 @@ def auth_screen(screen, font, small_font):
     clock = pygame.time.Clock()
 
     while True:
-        screen.fill((15, 15, 25))
-        title = font.render("TETRIS CLIMBER", True, (255, 220, 0))
+        screen.fill(UI["bg"])
+        title = font.render("TETRIS CLIMBER", True, UI["accent"])
         screen.blit(title, (WINDOW_W//2 - title.get_width()//2, 40))
 
         labels = {"login": "Login", "register": "Register"}
@@ -309,32 +330,32 @@ def auth_screen(screen, font, small_font):
         # Mode tabs
         for i, (m, label) in enumerate(labels.items()):
             x = WINDOW_W//2 - 100 + i*120
-            color = (255,220,0) if mode == m else (120,120,120)
+            color = UI["accent"] if mode == m else UI["text_faint"]
             img = font.render(label, True, color)
             screen.blit(img, (x, 100))
 
         # Input fields
         for fi, (fname, fval) in enumerate(fields.items()):
             fy = 170 + fi * 70
-            label_img = small_font.render(fname.capitalize() + ":", True, (180,180,180))
+            label_img = small_font.render(fname.capitalize() + ":", True, UI["text_dim"])
             screen.blit(label_img, (WINDOW_W//2 - 140, fy - 22))
             rect = pygame.Rect(WINDOW_W//2 - 140, fy, 280, 36)
-            color = (255,255,255) if focused == fname else (100,100,120)
-            pygame.draw.rect(screen, (30,30,45), rect)
-            pygame.draw.rect(screen, color, rect, 2)
+            border_col = (70, 100, 200) if focused == fname else UI["sep"]
+            pygame.draw.rect(screen, UI["input_bg"], rect, border_radius=4)
+            pygame.draw.rect(screen, border_col, rect, 2, border_radius=4)
             display = fval if fname != "password" else "*" * len(fval)
-            txt = small_font.render(display, True, (220,220,220))
+            txt = small_font.render(display, True, UI["text"])
             screen.blit(txt, (rect.x + 8, rect.y + 8))
 
         # Submit button
         btn_rect = pygame.Rect(WINDOW_W//2 - 80, 330, 160, 40)
-        btn_color = (60,180,60) if btn_rect.collidepoint(mx, my) else (40,140,40)
+        btn_color = UI["btn_hover"] if btn_rect.collidepoint(mx, my) else UI["btn"]
         pygame.draw.rect(screen, btn_color, btn_rect, border_radius=6)
-        btn_txt = font.render(mode.capitalize(), True, (255,255,255))
+        btn_txt = font.render(mode.capitalize(), True, (255, 255, 255))
         screen.blit(btn_txt, (btn_rect.centerx - btn_txt.get_width()//2, btn_rect.y + 8))
 
         if error:
-            err_img = small_font.render(error, True, (255, 80, 80))
+            err_img = small_font.render(error, True, UI["error"])
             screen.blit(err_img, (WINDOW_W//2 - err_img.get_width()//2, 385))
 
         pygame.display.flip()
@@ -386,8 +407,8 @@ def role_selection_screen(screen, font, small_font, available: list[str]) -> str
         },
     }
     while True:
-        screen.fill((15, 15, 25))
-        title = font.render("CHOOSE YOUR ROLE", True, (255, 220, 0))
+        screen.fill(UI["bg"])
+        title = font.render("CHOOSE YOUR ROLE", True, UI["accent"])
         screen.blit(title, (WINDOW_W // 2 - title.get_width() // 2, 60))
 
         mx, my = pygame.mouse.get_pos()
@@ -401,12 +422,12 @@ def role_selection_screen(screen, font, small_font, available: list[str]) -> str
             rect = pygame.Rect(rx, ry, 360, 130)
 
             if taken:
-                bg, border, tc = (25, 25, 30), (50, 50, 60), (70, 70, 70)
+                bg, border, tc = UI["card_taken"], UI["sep"], UI["text_faint"]
             elif rect.collidepoint(mx, my):
-                bg, border, tc = (50, 55, 80), info["color"], info["color"]
+                bg, border, tc = UI["card_hover"], info["color"], info["color"]
                 hovered = role
             else:
-                bg, border, tc = (30, 30, 45), (80, 80, 100), info["color"]
+                bg, border, tc = UI["card_bg"], UI["sep"], info["color"]
 
             pygame.draw.rect(screen, bg, rect, border_radius=10)
             pygame.draw.rect(screen, border, rect, 2, border_radius=10)
@@ -417,7 +438,8 @@ def role_selection_screen(screen, font, small_font, available: list[str]) -> str
             )
             screen.blit(lbl, (rect.x + 16, rect.y + 14))
             for j, line in enumerate((info["desc1"], info["desc2"])):
-                t = small_font.render(line, True, (140, 140, 140) if taken else (190, 190, 190))
+                desc_col = UI["text_faint"] if taken else UI["text_dim"]
+                t = small_font.render(line, True, desc_col)
                 screen.blit(t, (rect.x + 16, rect.y + 52 + j * 22))
 
         pygame.display.flip()
@@ -518,16 +540,16 @@ def main():
             if not resp or not resp.get("success"):
                 error = resp.get("error", "Connection failed") if resp else "No response"
                 # Show error then retry
-                screen.fill((15,15,25))
-                err = font.render(error, True, (255,80,80))
+                screen.fill(UI["bg"])
+                err = font.render(error, True, UI["error"])
                 screen.blit(err, (WINDOW_W//2 - err.get_width()//2, WINDOW_H//2))
                 pygame.display.flip()
                 pygame.time.wait(2000)
                 client = GameClient(host)
                 continue
         except Exception as e:
-            screen.fill((15,15,25))
-            err = font.render(f"Cannot connect: {e}", True, (255,80,80))
+            screen.fill(UI["bg"])
+            err = font.render(f"Cannot connect: {e}", True, UI["error"])
             screen.blit(err, (WINDOW_W//2 - err.get_width()//2, WINDOW_H//2))
             pygame.display.flip()
             pygame.time.wait(2000)
@@ -562,10 +584,10 @@ def main():
 
     # Waiting screen
     while client.state.get("status") not in ("playing", "builder_wins", "climber_wins") and client.connected:
-        screen.fill((15,15,25))
-        role_color = COLORS["climber"] if client.role == "climber" else (100,180,255)
+        screen.fill(UI["bg"])
+        role_color = COLORS["climber"] if client.role == "climber" else (60, 120, 210)
         msg = font.render(f"You are the {client.role.upper()}", True, role_color)
-        wait = small_font.render("Waiting for second player...", True, (150,150,150))
+        wait = small_font.render("Waiting for second player...", True, UI["text_faint"])
         screen.blit(msg, (WINDOW_W//2 - msg.get_width()//2, WINDOW_H//2 - 30))
         screen.blit(wait, (WINDOW_W//2 - wait.get_width()//2, WINDOW_H//2 + 10))
 
@@ -661,7 +683,7 @@ def main():
             state = dict(client.state)
             go_info = client.game_over_info
 
-        screen.fill((15, 15, 25))
+        screen.fill(UI["bg"])
 
         if go_info and not showing_gameover:
             showing_gameover = True
@@ -675,7 +697,7 @@ def main():
                 draw_climber(screen, state["climber"], frame)
 
         # Sidebar background
-        pygame.draw.rect(screen, (25, 25, 35), pygame.Rect(BOARD_PX_W, 0, SIDEBAR_W, WINDOW_H))
+        pygame.draw.rect(screen, UI["sidebar_bg"], pygame.Rect(BOARD_PX_W, 0, SIDEBAR_W, WINDOW_H))
         draw_sidebar(screen, font, small_font, state, client.role, client.username)
 
         if state.get("status") == "waiting":

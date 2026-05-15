@@ -216,9 +216,11 @@ class Climber:
         self.on_wall = 0          # reset; _move_x sets it if blocked
         self._move_x(self.vx, board)
 
-        # Preserve wall contact for a few ticks so players can time the jump
-        # even if they briefly stop pressing into the wall
-        if self.on_wall == 0 and not self.on_ground:
+        # Preserve wall contact so players can time the jump even if they briefly
+        # stop pressing into the wall — but NEVER at the board border.
+        half_w = CLIMBER_WIDTH / 2
+        at_border = (self.x <= half_w + 0.01 or self.x >= BOARD_COLS - half_w - 0.01)
+        if self.on_wall == 0 and not self.on_ground and not at_border:
             self.on_wall = prev_on_wall   # keep last known wall direction
 
         # Wall jump: airborne + touching wall + jump pressed + not in cooldown
